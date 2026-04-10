@@ -1,0 +1,460 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		E82B69992F88697A00BF157F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = E82B69982F88697A00BF157F /* AppDelegate.swift */; };
+		E82B699B2F88697A00BF157F /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = E82B699A2F88697A00BF157F /* SceneDelegate.swift */; };
+		E82B69A02F88697A00BF157F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = E82B699E2F88697A00BF157F /* Main.storyboard */; };
+		E82B69A22F88697D00BF157F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E82B69A12F88697D00BF157F /* Assets.xcassets */; };
+		E82B69A52F88697D00BF157F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = E82B69A32F88697D00BF157F /* LaunchScreen.storyboard */; };
+		E82B69BF2F886AF700BF157F /* DemoViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = E82B69AD2F886AF600BF157F /* DemoViewController.swift */; };
+		E82B69C02F886AF700BF157F /* EFMockData.swift in Sources */ = {isa = PBXBuildFile; fileRef = E82B69AE2F886AF600BF157F /* EFMockData.swift */; };
+		E82B69C12F886AF700BF157F /* EFFiveDayRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E82B69B12F886AF600BF157F /* EFFiveDayRenderer.swift */; };
+		E82B69C22F886AF700BF157F /* EFTimelineRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E82B69B22F886AF600BF157F /* EFTimelineRenderer.swift */; };
+		E82B69C32F886AF700BF157F /* EFKLineRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E82B69B32F886AF600BF157F /* EFKLineRenderer.swift */; };
+		E82B69C42F886AF700BF157F /* EFIndicatorEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E82B69B52F886AF600BF157F /* EFIndicatorEngine.swift */; };
+		E82B69C52F886AF700BF157F /* EFChartTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = E82B69B62F886AF700BF157F /* EFChartTheme.swift */; };
+		E82B69C62F886AF700BF157F /* EFChartConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = E82B69B72F886AF700BF157F /* EFChartConfig.swift */; };
+		E82B69C72F886AF700BF157F /* EFRenderContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = E82B69B82F886AF700BF157F /* EFRenderContext.swift */; };
+		E82B69C82F886AF700BF157F /* EFChartModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E82B69BA2F886AF700BF157F /* EFChartModels.swift */; };
+		E82B69C92F886AF700BF157F /* EFSubViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = E82B69BC2F886AF700BF157F /* EFSubViews.swift */; };
+		E82B69CA2F886AF700BF157F /* EFStockChartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E82B69BD2F886AF700BF157F /* EFStockChartView.swift */; };
+		E82B69CB2F886AF700BF157F /* EFSubIndicatorBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = E82B69BE2F886AF700BF157F /* EFSubIndicatorBar.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		E82B69952F88697A00BF157F /* EFStockChart.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = EFStockChart.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E82B69982F88697A00BF157F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		E82B699A2F88697A00BF157F /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
+		E82B699F2F88697A00BF157F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
+		E82B69A12F88697D00BF157F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		E82B69A42F88697D00BF157F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
+		E82B69A62F88697D00BF157F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		E82B69AD2F886AF600BF157F /* DemoViewController.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = DemoViewController.swift; sourceTree = "<group>"; };
+		E82B69AE2F886AF600BF157F /* EFMockData.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = EFMockData.swift; sourceTree = "<group>"; };
+		E82B69B12F886AF600BF157F /* EFFiveDayRenderer.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = EFFiveDayRenderer.swift; sourceTree = "<group>"; };
+		E82B69B22F886AF600BF157F /* EFTimelineRenderer.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = EFTimelineRenderer.swift; sourceTree = "<group>"; };
+		E82B69B32F886AF600BF157F /* EFKLineRenderer.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = EFKLineRenderer.swift; sourceTree = "<group>"; };
+		E82B69B52F886AF600BF157F /* EFIndicatorEngine.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = EFIndicatorEngine.swift; sourceTree = "<group>"; };
+		E82B69B62F886AF700BF157F /* EFChartTheme.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = EFChartTheme.swift; sourceTree = "<group>"; };
+		E82B69B72F886AF700BF157F /* EFChartConfig.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = EFChartConfig.swift; sourceTree = "<group>"; };
+		E82B69B82F886AF700BF157F /* EFRenderContext.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = EFRenderContext.swift; sourceTree = "<group>"; };
+		E82B69BA2F886AF700BF157F /* EFChartModels.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = EFChartModels.swift; sourceTree = "<group>"; };
+		E82B69BC2F886AF700BF157F /* EFSubViews.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = EFSubViews.swift; sourceTree = "<group>"; };
+		E82B69BD2F886AF700BF157F /* EFStockChartView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = EFStockChartView.swift; sourceTree = "<group>"; };
+		E82B69BE2F886AF700BF157F /* EFSubIndicatorBar.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = EFSubIndicatorBar.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		E82B69922F88697A00BF157F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		E82B698C2F88697A00BF157F = {
+			isa = PBXGroup;
+			children = (
+				E82B69972F88697A00BF157F /* EFStockChart */,
+				E82B69962F88697A00BF157F /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		E82B69962F88697A00BF157F /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				E82B69952F88697A00BF157F /* EFStockChart.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		E82B69972F88697A00BF157F /* EFStockChart */ = {
+			isa = PBXGroup;
+			children = (
+				E82B69AC2F886AF600BF157F /* Demo */,
+				E82B69AF2F886AF600BF157F /* EFStockChart */,
+				E82B69982F88697A00BF157F /* AppDelegate.swift */,
+				E82B699A2F88697A00BF157F /* SceneDelegate.swift */,
+				E82B699E2F88697A00BF157F /* Main.storyboard */,
+				E82B69A12F88697D00BF157F /* Assets.xcassets */,
+				E82B69A32F88697D00BF157F /* LaunchScreen.storyboard */,
+				E82B69A62F88697D00BF157F /* Info.plist */,
+			);
+			path = EFStockChart;
+			sourceTree = "<group>";
+		};
+		E82B69AC2F886AF600BF157F /* Demo */ = {
+			isa = PBXGroup;
+			children = (
+				E82B69AD2F886AF600BF157F /* DemoViewController.swift */,
+				E82B69AE2F886AF600BF157F /* EFMockData.swift */,
+			);
+			path = Demo;
+			sourceTree = "<group>";
+		};
+		E82B69AF2F886AF600BF157F /* EFStockChart */ = {
+			isa = PBXGroup;
+			children = (
+				E82B69B02F886AF600BF157F /* Renderers */,
+				E82B69B42F886AF600BF157F /* Core */,
+				E82B69B92F886AF700BF157F /* Models */,
+				E82B69BB2F886AF700BF157F /* Views */,
+			);
+			path = EFStockChart;
+			sourceTree = "<group>";
+		};
+		E82B69B02F886AF600BF157F /* Renderers */ = {
+			isa = PBXGroup;
+			children = (
+				E82B69B12F886AF600BF157F /* EFFiveDayRenderer.swift */,
+				E82B69B22F886AF600BF157F /* EFTimelineRenderer.swift */,
+				E82B69B32F886AF600BF157F /* EFKLineRenderer.swift */,
+			);
+			path = Renderers;
+			sourceTree = "<group>";
+		};
+		E82B69B42F886AF600BF157F /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				E82B69B52F886AF600BF157F /* EFIndicatorEngine.swift */,
+				E82B69B62F886AF700BF157F /* EFChartTheme.swift */,
+				E82B69B72F886AF700BF157F /* EFChartConfig.swift */,
+				E82B69B82F886AF700BF157F /* EFRenderContext.swift */,
+			);
+			path = Core;
+			sourceTree = "<group>";
+		};
+		E82B69B92F886AF700BF157F /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				E82B69BA2F886AF700BF157F /* EFChartModels.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		E82B69BB2F886AF700BF157F /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				E82B69BC2F886AF700BF157F /* EFSubViews.swift */,
+				E82B69BD2F886AF700BF157F /* EFStockChartView.swift */,
+				E82B69BE2F886AF700BF157F /* EFSubIndicatorBar.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		E82B69942F88697A00BF157F /* EFStockChart */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E82B69A92F88697D00BF157F /* Build configuration list for PBXNativeTarget "EFStockChart" */;
+			buildPhases = (
+				E82B69912F88697A00BF157F /* Sources */,
+				E82B69922F88697A00BF157F /* Frameworks */,
+				E82B69932F88697A00BF157F /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = EFStockChart;
+			productName = EFStockChart;
+			productReference = E82B69952F88697A00BF157F /* EFStockChart.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		E82B698D2F88697A00BF157F /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1420;
+				LastUpgradeCheck = 1420;
+				ORGANIZATIONNAME = "min Lee";
+				TargetAttributes = {
+					E82B69942F88697A00BF157F = {
+						CreatedOnToolsVersion = 14.2;
+					};
+				};
+			};
+			buildConfigurationList = E82B69902F88697A00BF157F /* Build configuration list for PBXProject "EFStockChart" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = E82B698C2F88697A00BF157F;
+			productRefGroup = E82B69962F88697A00BF157F /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				E82B69942F88697A00BF157F /* EFStockChart */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		E82B69932F88697A00BF157F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E82B69A52F88697D00BF157F /* LaunchScreen.storyboard in Resources */,
+				E82B69A22F88697D00BF157F /* Assets.xcassets in Resources */,
+				E82B69A02F88697A00BF157F /* Main.storyboard in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		E82B69912F88697A00BF157F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E82B69C72F886AF700BF157F /* EFRenderContext.swift in Sources */,
+				E82B69C12F886AF700BF157F /* EFFiveDayRenderer.swift in Sources */,
+				E82B69C42F886AF700BF157F /* EFIndicatorEngine.swift in Sources */,
+				E82B69C62F886AF700BF157F /* EFChartConfig.swift in Sources */,
+				E82B69C52F886AF700BF157F /* EFChartTheme.swift in Sources */,
+				E82B69C22F886AF700BF157F /* EFTimelineRenderer.swift in Sources */,
+				E82B69992F88697A00BF157F /* AppDelegate.swift in Sources */,
+				E82B69C82F886AF700BF157F /* EFChartModels.swift in Sources */,
+				E82B69CB2F886AF700BF157F /* EFSubIndicatorBar.swift in Sources */,
+				E82B69CA2F886AF700BF157F /* EFStockChartView.swift in Sources */,
+				E82B699B2F88697A00BF157F /* SceneDelegate.swift in Sources */,
+				E82B69C92F886AF700BF157F /* EFSubViews.swift in Sources */,
+				E82B69C32F886AF700BF157F /* EFKLineRenderer.swift in Sources */,
+				E82B69BF2F886AF700BF157F /* DemoViewController.swift in Sources */,
+				E82B69C02F886AF700BF157F /* EFMockData.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXVariantGroup section */
+		E82B699E2F88697A00BF157F /* Main.storyboard */ = {
+			isa = PBXVariantGroup;
+			children = (
+				E82B699F2F88697A00BF157F /* Base */,
+			);
+			name = Main.storyboard;
+			sourceTree = "<group>";
+		};
+		E82B69A32F88697D00BF157F /* LaunchScreen.storyboard */ = {
+			isa = PBXVariantGroup;
+			children = (
+				E82B69A42F88697D00BF157F /* Base */,
+			);
+			name = LaunchScreen.storyboard;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
+
+/* Begin XCBuildConfiguration section */
+		E82B69A72F88697D00BF157F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		E82B69A82F88697D00BF157F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		E82B69AA2F88697D00BF157F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 538GJ3S3J6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = EFStockChart/Info.plist;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UIMainStoryboardFile = Main;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.minLee.EFStockChart;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		E82B69AB2F88697D00BF157F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 538GJ3S3J6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = EFStockChart/Info.plist;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UIMainStoryboardFile = Main;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.minLee.EFStockChart;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		E82B69902F88697A00BF157F /* Build configuration list for PBXProject "EFStockChart" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E82B69A72F88697D00BF157F /* Debug */,
+				E82B69A82F88697D00BF157F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E82B69A92F88697D00BF157F /* Build configuration list for PBXNativeTarget "EFStockChart" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E82B69AA2F88697D00BF157F /* Debug */,
+				E82B69AB2F88697D00BF157F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = E82B698D2F88697A00BF157F /* Project object */;
+}
