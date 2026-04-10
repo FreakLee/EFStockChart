@@ -84,7 +84,7 @@ public final class EFStockChartView: UIView {
 
     private func setup() {
         backgroundColor = EFColor.background
-        mainImageView.contentMode = .scaleAspectFill
+        mainImageView.contentMode = .scaleToFill  // CGImage 已是精确尺寸，不需缩放
         crosshairLayer.isUserInteractionEnabled = false
 
         addSubview(periodBar)
@@ -201,6 +201,7 @@ public final class EFStockChartView: UIView {
     public func loadTimeline(_ data: EFTimelineData) {
         timelineData = data
         currentPeriod = data.period
+        // 切换数据源时始终隐藏十字线（解决 Segment 切换后残留问题）
         crosshairActive = false
         crosshairLayer.hide()
         periodBar.setSelected(data.period)
@@ -212,6 +213,7 @@ public final class EFStockChartView: UIView {
     public func loadKLine(_ data: EFKLineData) {
         kLineData = data
         currentPeriod = .kLine(data.period)
+        // 切换数据源时始终隐藏十字线
         crosshairActive = false
         crosshairLayer.hide()
         periodBar.setSelected(currentPeriod)
@@ -280,7 +282,15 @@ public final class EFStockChartView: UIView {
 
     private func enqueueRender(token: UUID, fullRedraw: Bool, targetPanel: EFSubPanel? = nil) {
         let mainRect  = mainImageView.bounds
-        let subFrames = subPanels.filter { !$0.isHidden }.map { (panel: $0, rect: $0.imageView.bounds) }
+        // imageView.bounds 可能在 subpanel 未 layout 时仍为 zero
+        // 改用 panel.frame 减去 titleBar 高度得到正确的 imageView 区域
+        let subTitleH = EFLayout.subDivider
+        let subFrames = subPanels.filter { !$0.isHidden }.compactMap { panel -> (panel: EFSubPanel, iv: UIImageView, rect: CGRect)? in
+            let ivH = panel.frame.height - subTitleH
+            guard panel.frame.width > 0, ivH > 0 else { return nil }
+            let rect = CGRect(x: 0, y: 0, width: panel.frame.width - EFLayout.priceAxisW, height: ivH)
+            return (panel, panel.imageView, rect)
+        }
 
         let tlData   = timelineData
         let klData   = kLineData
@@ -312,25 +322,31 @@ public final class EFStockChartView: UIView {
                 }
             }
 
-            // ── 副图渲染
-            for (panel, rect) in subFrames {
+            // ── 副图渲染（subFrames 已包含正确的 imageView 尺寸）
+            for (i, entry) in subFrames.enumerated() {
+                let (panel, iv, rect) = entry
                 guard rect.width > 0, rect.height > 0 else { continue }
                 if let tp = targetPanel, tp !== panel { continue }  // 只刷指定副图
+
+                // 副图渲染的完整区域（含 titleBar 占位）
+                let renderRect = CGRect(x: 0, y: 0,
+                                        width: rect.width + EFLayout.priceAxisW,
+                                        height: rect.height)
 
                 var img: CGImage?
                 switch period {
                 case .timeline, .fiveDay:
                     if let d = tlData {
-                        // 分时图副图：MACD
                         let closes = d.points.map(\.price)
                         if closes.count > 26 {
                             let r = EFIndicatorEngine.macd(closes: closes)
-                            if let ctx = makeOffscreenContext(size: rect.size, scale: screenScale) {
+                            if let ctx = makeOffscreenContext(size: renderRect.size, scale: screenScale) {
                                 ctx.setFillColor(EFColor.panel.cgColor)
-                                ctx.fill(CGRect(origin: .zero, size: rect.size))
-                                let subR = tlR.subContentRect(CGRect(origin: .zero, size: rect.size))
-                                tlR.drawMACDSub(ctx: ctx, result: r, count: closes.count,
-                                                 total: EFTimelineRenderer.totalSlots(for: d.period),
+                                ctx.fill(CGRect(origin: .zero, size: renderRect.size))
+                                let subR = tlR.subContentRect(renderRect)
+                                // 分时图不需要 visibleRange（全量数据按时间顺序排列）
+                                tlR.drawMACDSub(ctx: ctx, result: r,
+                                                 visibleRange: nil,
                                                  content: subR, crosshairIdx: cIdx)
                                 ctx.setStrokeColor(EFColor.border.cgColor); ctx.setLineWidth(0.5); ctx.stroke(subR)
                                 img = ctx.makeImage()
@@ -338,26 +354,26 @@ public final class EFStockChartView: UIView {
                         }
                     }
                 case .kLine:
-                    if let d = klData {
-                        let panelIdx = subFrames.firstIndex(where: { $0.panel === panel }) ?? 0
-                        if panelIdx < d.subData.count {
-                            img = klR.renderSub(data: d, subIndex: panelIdx, rect: rect,
-                                                visibleRange: vis, candleWidth: cw, crosshairIdx: cIdx)
-                        }
+                    if let d = klData, i < d.subData.count {
+                        // 传入完整 panel 区域（渲染器内部自己算 subContentRect）
+                        img = klR.renderSub(data: d, subIndex: i, rect: renderRect,
+                                            visibleRange: vis, candleWidth: cw, crosshairIdx: cIdx)
                     }
                 }
-                if let iv = panel.imageView as UIImageView?, let img = img {
+                if let img = img {
                     subImgs.append((iv, img))
                 }
             }
 
             DispatchQueue.main.async {
                 guard self.renderToken == token else { return }
+                // 必须传入 scale，否则 CGImage(2x/3x) 会被 UIKit 按 1x 处理
+                // 导致图像被放大 2-3 倍，文字/图形全部溢出
                 if let img = mainImg {
-                    self.mainImageView.image = UIImage(cgImage: img)
+                    self.mainImageView.image = UIImage(cgImage: img, scale: screenScale, orientation: .up)
                 }
                 for (iv, img) in subImgs {
-                    iv.image = UIImage(cgImage: img)
+                    iv.image = UIImage(cgImage: img, scale: screenScale, orientation: .up)
                 }
                 self.updateInfoBar()
             }

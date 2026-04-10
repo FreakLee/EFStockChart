@@ -244,13 +244,20 @@ final class EFKLineRenderer {
             drawVolumeSub(ctx: ctx, vd: vd, vis: safeVis, content: content,
                            cw: cw, crosshairIdx: crosshairIdx)
         case .macd(let md):
-            tlRenderer.drawMACDSub(ctx: ctx, result: md, count: data.candles.count,
-                                    total: data.candles.count, content: content,
+            // 传入 safeVis 确保 MACD 与主图 K 线可见区间完全同步
+            tlRenderer.drawMACDSub(ctx: ctx, result: md,
+                                    visibleRange: safeVis,
+                                    content: content,
                                     crosshairIdx: crosshairIdx)
+            // 图例显示可见区间最后一个值
+            let lastI = safeVis.upperBound - 1
+            let difV = lastI < md.dif.count ? md.dif[lastI] : nil
+            let deaV = lastI < md.dea.count ? md.dea[lastI] : nil
+            let barV = lastI < md.bar.count ? md.bar[lastI] : nil
             drawSubLabel(ctx: ctx, content: content, text: "MACD",
-                          vals: [("DIF", md.dif.last, EFColor.difLine),
-                                 ("DEA", md.dea.last, EFColor.deaLine),
-                                 ("M",   md.bar.last,  EFColor.rising)])
+                          vals: [("DIF", difV, EFColor.difLine),
+                                 ("DEA", deaV, EFColor.deaLine),
+                                 ("M",   barV, EFColor.rising)])
         case .kdj(let kd):
             drawKDJSub(ctx: ctx, kd: kd, vis: safeVis, content: content,
                         cw: cw, crosshairIdx: crosshairIdx)
@@ -269,6 +276,8 @@ final class EFKLineRenderer {
         let bodyW    = Swift.max(1, slotW * (1 - EFLayout.candleGap))
         let map      = EFCoordMap(rect: content, minV: 0, maxV: maxVol)
 
+        ctx.saveGState()
+        ctx.clip(to: content)
         let upP = CGMutablePath(), dnP = CGMutablePath()
         for (i, gi) in vis.enumerated() {
             guard gi < vd.volumes.count else { continue }
@@ -281,6 +290,7 @@ final class EFKLineRenderer {
         }
         ctx.addPath(upP); ctx.setFillColor(EFColor.rising.withAlphaComponent(0.85).cgColor); ctx.fillPath()
         ctx.addPath(dnP); ctx.setFillColor(EFColor.falling.withAlphaComponent(0.85).cgColor); ctx.fillPath()
+        ctx.restoreGState()
 
         // MA 线
         func volLine(_ vals: [Double?], color: UIColor) {
@@ -316,8 +326,22 @@ final class EFKLineRenderer {
 
     private func drawKDJSub(ctx: CGContext, kd: EFKDJResult, vis: Range<Int>,
                               content: CGRect, cw: CGFloat, crosshairIdx: Int?) {
-        let map   = EFCoordMap(rect: content, minV: 0, maxV: 100)
-        let slotW = content.width / CGFloat(vis.count)
+        // J 值可能超过 100 或低于 0，动态计算实际范围防止溢出
+        let visK = vis.compactMap { $0 < kd.k.count ? kd.k[$0] : nil }
+        let visD = vis.compactMap { $0 < kd.d.count ? kd.d[$0] : nil }
+        let visJ = vis.compactMap { $0 < kd.j.count ? kd.j[$0] : nil }
+        let allVis = visK + visD + visJ
+        let rawMin = (allVis.min() ?? 0)
+        let rawMax = (allVis.max() ?? 100)
+        let pad    = (rawMax - rawMin) * 0.12
+        let minV   = Swift.min(rawMin - pad, 0)
+        let maxV   = Swift.max(rawMax + pad, 100)
+        let map    = EFCoordMap(rect: content, minV: minV, maxV: maxV)
+        let slotW  = content.width / CGFloat(vis.count)
+
+        // Clip 到 content 区域，防止 J 线超出图表边界
+        ctx.saveGState()
+        ctx.clip(to: content)
 
         // 超买超卖参考线
         for level in [20.0, 50.0, 80.0] {
@@ -338,7 +362,9 @@ final class EFKLineRenderer {
         line(kd.d, color: EFColor.dLine)
         line(kd.j, color: EFColor.jLine)
 
-        // 右侧 20/50/80 标签
+        ctx.restoreGState()  // 恢复 clip
+
+        // 右侧参考线标签（在 clip 外绘制，避免被裁剪）
         for level in [20.0, 80.0] {
             ctx.drawString("\(Int(level))", at: CGPoint(x: content.maxX + 3, y: map.y(level)),
                             font: EFLayout.axisFont, color: EFColor.textSecondary, align: .left)
@@ -365,6 +391,10 @@ final class EFKLineRenderer {
         let map   = EFCoordMap(rect: content, minV: 0, maxV: 100)
         let slotW = content.width / CGFloat(vis.count)
 
+        // Clip 防止超出
+        ctx.saveGState()
+        ctx.clip(to: content)
+
         for level in [30.0, 70.0] {
             let y = map.y(level)
             ctx.strokeDashedLine(from: CGPoint(x: content.minX, y: y),
@@ -377,6 +407,7 @@ final class EFKLineRenderer {
             return CGPoint(x: content.minX + (CGFloat(i) + 0.5) * slotW, y: map.y(rd.values[gi]))
         }
         ctx.strokePolyline(points: pts, color: EFColor.ma5, lineWidth: 1.0)
+        ctx.restoreGState()
 
         if let ci = crosshairIdx, vis.contains(ci) {
             let i = ci - vis.lowerBound
@@ -419,9 +450,11 @@ final class EFKLineRenderer {
     }
 
     func subContentRect(_ rect: CGRect) -> CGRect {
-        CGRect(x: rect.minX, y: rect.minY + EFLayout.subDivider,
+        // rect = imageView 尺寸（titleBar 已在 UIView 层级中，不在这里）
+        // 副图不画时间轴，只留 2pt 上边距和 2pt 下边距
+        CGRect(x: rect.minX, y: rect.minY + 2,
                width: rect.width - EFLayout.priceAxisW,
-               height: rect.height - EFLayout.subDivider - EFLayout.timeAxisH)
+               height: rect.height - 4)
     }
 
     private func computePriceRange(candles: [EFKLinePoint], maData: [EFMAResult],

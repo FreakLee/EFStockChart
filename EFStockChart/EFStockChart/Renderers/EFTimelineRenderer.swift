@@ -312,7 +312,8 @@ final class EFTimelineRenderer {
             let closes = pts.map(\.price)
             if closes.count > 26 {
                 let r = EFIndicatorEngine.macd(closes: closes)
-                drawMACDSub(ctx: ctx, result: r, count: pts.count, total: total,
+                // 分时图全量绘制，不需要 visibleRange
+                drawMACDSub(ctx: ctx, result: r, visibleRange: nil,
                              content: content, crosshairIdx: crosshairIdx)
             }
         default: break
@@ -352,22 +353,37 @@ final class EFTimelineRenderer {
 
     // MARK: ── MACD 副图（通用，K线也复用） ───────────────────
 
-    func drawMACDSub(ctx: CGContext, result: EFMACDResult, count: Int, total: Int,
+    /// visibleRange: K线图传可见区间，分时图传 nil（全量）
+    func drawMACDSub(ctx: CGContext, result: EFMACDResult,
+                      visibleRange: Range<Int>? = nil,
                       content: CGRect, crosshairIdx: Int?) {
-        let allVals = result.dif + result.dea + result.bar
+        // 可见区间：K线图用 visibleRange，分时图用全量
+        let vis: Range<Int>
+        let totalCount = result.bar.count
+        if let vr = visibleRange {
+            vis = Swift.max(0, vr.lowerBound)..<Swift.min(totalCount, vr.upperBound)
+        } else {
+            vis = 0..<totalCount
+        }
+        guard !vis.isEmpty else { return }
+
+        // 只用可见区间的值计算 Y 轴范围（和主图对齐）
+        let visBar = Array(result.bar[vis])
+        let visDif = Array(result.dif[vis])
+        let visDea = Array(result.dea[vis])
+        let allVals = visBar + visDif + visDea
         guard !allVals.isEmpty else { return }
         let absMax = allVals.map(abs).max() ?? 1
-        let range  = -absMax * 1.1...absMax * 1.1
+        let range  = -absMax * 1.15...absMax * 1.15
         let map    = EFCoordMap(rect: content, minV: range.lowerBound, maxV: range.upperBound)
-        let slotW  = content.width / CGFloat(total)
+        let slotW  = content.width / CGFloat(vis.count)
         let barW   = Swift.max(1, slotW * 0.7)
         let zeroY  = map.y(0)
 
-        // MACD 柱
+        // MACD 柱（只画可见部分，x 按 vis.count 均匀分布）
         let upP = CGMutablePath(), dnP = CGMutablePath()
-        for i in 0..<count {
-            let v = result.bar[i]
-            let x = content.minX + (CGFloat(i) + 0.5) * slotW
+        for (localI, v) in visBar.enumerated() {
+            let x = content.minX + (CGFloat(localI) + 0.5) * slotW
             let y = map.y(v)
             let r = CGRect(x: x - barW/2, y: Swift.min(y, zeroY),
                             width: barW, height: abs(y - zeroY))
@@ -381,29 +397,30 @@ final class EFTimelineRenderer {
                               to:   CGPoint(x: content.maxX, y: zeroY),
                               color: EFColor.grid, lineWidth: 0.3, dash: [2, 2])
 
-        // DIF / DEA 线
+        // DIF / DEA 折线（可见区间）
         func polyLine(_ vals: [Double], color: UIColor) {
             let pts: [CGPoint?] = vals.enumerated().map { i, v in
-                i < count ? CGPoint(x: content.minX + CGFloat(i) * slotW, y: map.y(v)) : nil
+                CGPoint(x: content.minX + CGFloat(i) * slotW, y: map.y(v))
             }
             ctx.strokePolyline(points: pts, color: color, lineWidth: 1.0)
         }
-        polyLine(Array(result.dif.prefix(count)), color: EFColor.difLine)
-        polyLine(Array(result.dea.prefix(count)), color: EFColor.deaLine)
+        polyLine(visDif, color: EFColor.difLine)
+        polyLine(visDea, color: EFColor.deaLine)
 
-        // 十字线竖延伸
-        if let idx = crosshairIdx, idx < count {
-            let x = content.minX + CGFloat(idx) * slotW
+        // 十字线竖延伸（全局索引转本地索引）
+        if let gIdx = crosshairIdx, vis.contains(gIdx) {
+            let localI = gIdx - vis.lowerBound
+            let x = content.minX + (CGFloat(localI) + 0.5) * slotW
             ctx.strokeDashedLine(from: CGPoint(x: x, y: content.minY),
                                   to:   CGPoint(x: x, y: content.maxY),
                                   color: EFColor.crosshair, lineWidth: 0.5)
         }
 
-        // 图例
-        let dif = result.dif.indices.contains(Swift.max(0, count-1)) ? result.dif[count-1] : 0
-        let dea = result.dea.indices.contains(Swift.max(0, count-1)) ? result.dea[count-1] : 0
-        let bar = result.bar.indices.contains(Swift.max(0, count-1)) ? result.bar[count-1] : 0
-        let legend = "DIF:\(EFFormat.price(dif, decimals: 3))  DEA:\(EFFormat.price(dea, decimals: 3))  M:\(EFFormat.price(bar, decimals: 3))"
+        // 图例（显示最后一个可见点的值）
+        let lastDif = visDif.last ?? 0
+        let lastDea = visDea.last ?? 0
+        let lastBar = visBar.last ?? 0
+        let legend = "DIF:\(EFFormat.price(lastDif, decimals: 3))  DEA:\(EFFormat.price(lastDea, decimals: 3))  M:\(EFFormat.price(lastBar, decimals: 3))"
         ctx.drawString(legend, at: CGPoint(x: content.minX + 4, y: content.minY + 7),
                         font: EFLayout.axisFont, color: EFColor.textSecondary, align: .left)
     }
@@ -418,10 +435,11 @@ final class EFTimelineRenderer {
     }
 
     func subContentRect(_ rect: CGRect) -> CGRect {
+        // imageView 已在 titleBar 下方，副图不画时间轴
         CGRect(x: rect.minX,
-               y: rect.minY + EFLayout.subDivider,
+               y: rect.minY + 2,
                width: rect.width - EFLayout.priceAxisW,
-               height: rect.height - EFLayout.subDivider - EFLayout.timeAxisH)
+               height: rect.height - 4)
     }
 
     private func priceDecimalPlaces(_ price: Double) -> Int {
@@ -455,8 +473,23 @@ final class EFTimelineRenderer {
         let lw: CGFloat = 36, vw: CGFloat = 90
         let tw = pad*2 + lw + vw, th = pad*2 + CGFloat(rows.count) * lh
 
-        let tx = pt.x + tw + 8 <= content.maxX ? pt.x + 6 : pt.x - tw - 6
-        let ty = Swift.max(content.minY + 4, Swift.min(content.maxY - th - 4, pt.y - th/2))
+        // ── X 轴：优先显示在十字线右侧，空间不足则显示左侧
+        //    两端都 clamp 到 content 内，确保不超出图表边界
+        var tx: CGFloat
+        if pt.x + 8 + tw <= content.maxX {
+            tx = pt.x + 8                              // 右侧有空间：显示右侧
+        } else if pt.x - 8 - tw >= content.minX {
+            tx = pt.x - 8 - tw                         // 左侧有空间：显示左侧
+        } else {
+            tx = pt.x + 8                              // 都不够：贴右显示，让 clamp 兜底
+        }
+        // 四边 clamp，保证整个 tooltip 都在 content 内
+        tx = Swift.max(content.minX + 2, Swift.min(content.maxX - tw - 2, tx))
+
+        // ── Y 轴：以十字线 Y 为中心，上下 clamp
+        var ty = pt.y - th / 2
+        ty = Swift.max(content.minY + 2, Swift.min(content.maxY - th - 2, ty))
+
         let tr = CGRect(x: tx, y: ty, width: tw, height: th)
 
         ctx.fillRoundedRect(tr, radius: 4, color: EFColor.tooltipBg)
@@ -473,6 +506,3 @@ final class EFTimelineRenderer {
     }
 }
 
-//private extension CGRect {
-//    func withOrigin(_ o: CGPoint) -> CGRect { CGRect(origin: o, size: size) }
-//}

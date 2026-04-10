@@ -100,7 +100,7 @@ final class EFSubPanel: UIView {
 
     private func build() {
         backgroundColor = EFColor.background
-        imageView.contentMode = .scaleAspectFill
+        imageView.contentMode = .scaleToFill  // 渲染图像已是精确尺寸
 
         titleBar.translatesAutoresizingMaskIntoConstraints   = false
         imageView.translatesAutoresizingMaskIntoConstraints  = false
