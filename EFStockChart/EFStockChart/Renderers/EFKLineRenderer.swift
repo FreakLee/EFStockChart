@@ -6,8 +6,12 @@
 //  Copyright © 2026 min Lee. All rights reserved.
 //
 
-// EFKLineRenderer.swift
-// K线图渲染器 — 蜡烛图 + MA/EMA线 + 副图(MACD/KDJ/RSI/VOL)
+// K线图渲染器 
+// 规则：
+//   - mainImageView.bounds → mainContentRect (仅减 topPad + timeAxisH，不减 infoBarH)
+//   - 副图 imageView.bounds → subContentRect (顶部 16pt 图例 + 底部 2pt)
+//   - 所有绘制内容均 clip 到 content 区域内，不超出边界
+//   - MACD 图例只画一次（由 KLineRenderer 在 content 上方绘制）
 
 import UIKit
 import CoreGraphics
@@ -15,454 +19,473 @@ import CoreGraphics
 final class EFKLineRenderer {
 
     private let scale: CGFloat
-    private let tlRenderer: EFTimelineRenderer  // 复用 MACD / Tooltip / 工具方法
+    private let tlR: EFTimelineRenderer   // 复用 MACD 内容 + Tooltip + 工具方法
 
     init(scale: CGFloat = UIScreen.main.scale) {
         self.scale = scale
-        self.tlRenderer = EFTimelineRenderer(scale: scale)
+        self.tlR   = EFTimelineRenderer(scale: scale)
     }
 
-    // MARK: ── 主图 ────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - 公开入口
+    // ─────────────────────────────────────────────────────────────
 
-    func renderMain(
-        data: EFKLineData,
-        rect: CGRect,
-        visibleRange: Range<Int>,
-        crosshairIdx: Int? = nil,
-        candleWidth: CGFloat = EFLayout.candleDefW
-    ) -> CGImage? {
-        guard let ctx = makeOffscreenContext(size: rect.size, scale: scale) else { return nil }
-        drawMain(ctx: ctx, data: data, rect: rect.withOrigin(.zero),
-                 vis: visibleRange, crosshairIdx: crosshairIdx, cw: candleWidth)
+    /// 渲染主图（蜡烛 + MA 线 + 网格 + 十字线）
+    func renderMain(data: EFKLineData,
+                    rect: CGRect,
+                    visibleRange: Range<Int>,
+                    crosshairIdx: Int?,
+                    candleWidth: CGFloat) -> CGImage? {
+        guard let ctx = makeCtx(rect.size) else { return nil }
+        drawMain(ctx: ctx, data: data,
+                 rect: CGRect(origin: .zero, size: rect.size),
+                 vis: visibleRange, ci: crosshairIdx, cw: candleWidth)
         return ctx.makeImage()
     }
 
-    // MARK: ── 副图 ────────────────────────────────────────────
-
-    func renderSub(
-        data: EFKLineData,
-        subIndex: Int,
-        rect: CGRect,
-        visibleRange: Range<Int>,
-        candleWidth: CGFloat = EFLayout.candleDefW,
-        crosshairIdx: Int? = nil
-    ) -> CGImage? {
+    /// 渲染副图（imageView.bounds 传入）
+    func renderSub(data: EFKLineData,
+                   subIndex: Int,
+                   rect: CGRect,
+                   visibleRange: Range<Int>,
+                   candleWidth: CGFloat,
+                   crosshairIdx: Int?) -> CGImage? {
         guard subIndex < data.subData.count,
-              let ctx = makeOffscreenContext(size: rect.size, scale: scale) else { return nil }
-        drawSub(ctx: ctx, data: data, subIndex: subIndex, rect: rect.withOrigin(.zero),
-                vis: visibleRange, cw: candleWidth, crosshairIdx: crosshairIdx)
+              let ctx = makeCtx(rect.size) else { return nil }
+        let r = CGRect(origin: .zero, size: rect.size)
+        ctx.setFillColor(EFColor.panel.cgColor); ctx.fill(r)
+        drawSub(ctx: ctx, data: data, subIndex: subIndex,
+                rect: r, vis: visibleRange, cw: candleWidth, ci: crosshairIdx)
         return ctx.makeImage()
     }
 
-    // MARK: ── 主图绘制 ───────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - 主图绘制
+    // ─────────────────────────────────────────────────────────────
 
-    private func drawMain(ctx: CGContext, data: EFKLineData, rect: CGRect,
-                           vis: Range<Int>, crosshairIdx: Int?, cw: CGFloat) {
+    private func drawMain(ctx: CGContext, data: EFKLineData,
+                          rect: CGRect, vis: Range<Int>,
+                          ci: Int?, cw: CGFloat) {
         ctx.setFillColor(EFColor.panel.cgColor); ctx.fill(rect)
+        guard !data.candles.isEmpty else { return }
 
-        let candles = data.candles
-        guard !candles.isEmpty, !vis.isEmpty else { return }
+        let safeVis = tlR.clampRange(vis, count: data.candles.count)
+        let visC    = Array(data.candles[safeVis])
+        let pRange  = computePriceRange(candles: visC, maData: data.maResults, vis: safeVis)
+        let cr      = mainContentRect(rect)
 
-        let safeVis  = clampVis(vis, count: candles.count)
-        let visCan   = Array(candles[safeVis])
-        let priceRange = computePriceRange(candles: visCan, maData: data.maResults, vis: safeVis)
-        let content  = mainContentRect(rect)
-        let map      = EFCoordMap(rect: content, minV: priceRange.lowerBound, maxV: priceRange.upperBound)
+        drawPriceGrid(ctx: ctx, rect: rect, cr: cr, pRange: pRange)
 
-        drawPriceGrid(ctx: ctx, rect: rect, content: content, map: map, range: priceRange)
-        drawCandles(ctx: ctx, candles: visCan, vis: safeVis, content: content, map: map, cw: cw)
-        drawMALines(ctx: ctx, maData: data.maResults, vis: safeVis, content: content, map: map, cw: cw)
-        drawTimeAxis(ctx: ctx, candles: visCan, vis: safeVis, rect: rect, content: content, cw: cw, period: data.period)
+        // ── 蜡烛 + MA 均线：clip 到 cr，防止超出右边界
+        ctx.saveGState()
+        ctx.clip(to: cr)
+        drawCandles(ctx: ctx, candles: visC, vis: safeVis, cr: cr, pRange: pRange, cw: cw)
+        drawMALines(ctx: ctx, maData: data.maResults, vis: safeVis, cr: cr, pRange: pRange, cw: cw)
+        ctx.restoreGState()
 
-        if let ci = crosshairIdx, safeVis.contains(ci) {
-            drawCrosshair(ctx: ctx, idx: ci, data: data, vis: safeVis,
-                          rect: rect, content: content, map: map, cw: cw)
+        drawTimeAxis(ctx: ctx, candles: visC, vis: safeVis, rect: rect, cr: cr, period: data.period)
+
+        if let idx = ci, safeVis.contains(idx) {
+            drawCrosshair(ctx: ctx, idx: idx, data: data, vis: safeVis,
+                          rect: rect, cr: cr, pRange: pRange, cw: cw)
         }
     }
 
-    // MARK: ── 蜡烛绘制（批量路径）───────────────────────────
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - 蜡烛图（批量路径）
+    // ─────────────────────────────────────────────────────────────
 
-    private func drawCandles(ctx: CGContext, candles: [EFKLinePoint], vis: Range<Int>,
-                              content: CGRect, map: EFCoordMap, cw: CGFloat) {
-        let slotW   = content.width / CGFloat(vis.count)
-        let bodyW   = Swift.max(1, slotW * (1 - EFLayout.candleGap))
-        let wickW: CGFloat = 0.8
+    private func drawCandles(ctx: CGContext, candles: [EFKLinePoint],
+                              vis: Range<Int>, cr: CGRect,
+                              pRange: ClosedRange<Double>, cw: CGFloat) {
+        let slotW = cr.width / CGFloat(vis.count)
+        let bodyW = Swift.max(1, slotW * (1 - EFLayout.candleGap))
 
-        let riseBody = CGMutablePath(), fallBody = CGMutablePath()
-        let riseWick = CGMutablePath(), fallWick = CGMutablePath()
-        let dojiPath = CGMutablePath()
+        let rB = CGMutablePath(), fB = CGMutablePath()
+        let rW = CGMutablePath(), fW = CGMutablePath()
+        let dP = CGMutablePath()
 
-        for (i, c) in candles.enumerated() {
-            let gIdx  = vis.lowerBound + i
-            let x     = content.minX + (CGFloat(i) + 0.5) * slotW
-            let openY  = map.y(c.open)
-            let closeY = map.y(c.close)
-            let highY  = map.y(c.high)
-            let lowY   = map.y(c.low)
-            let bodyTop = Swift.min(openY, closeY)
-            let bodyH   = Swift.max(1, abs(closeY - openY))
-            let body    = CGRect(x: x - bodyW/2, y: bodyTop, width: bodyW, height: bodyH)
+        for (li, c) in candles.enumerated() {
+            let x      = cr.minX + (CGFloat(li) + 0.5) * slotW
+            let openY  = tlR.yFor(price: c.open,  range: pRange, rect: cr)
+            let closeY = tlR.yFor(price: c.close, range: pRange, rect: cr)
+            let highY  = tlR.yFor(price: c.high,  range: pRange, rect: cr)
+            let lowY   = tlR.yFor(price: c.low,   range: pRange, rect: cr)
+            let bTop   = Swift.min(openY, closeY)
+            let bH     = Swift.max(1, abs(closeY - openY))
+            let body   = CGRect(x: x - bodyW/2, y: bTop, width: bodyW, height: bH)
 
             if c.isBullish {
-                riseBody.addRect(body)
-                riseWick.move(to: CGPoint(x: x, y: highY));  riseWick.addLine(to: CGPoint(x: x, y: bodyTop))
-                riseWick.move(to: CGPoint(x: x, y: bodyTop + bodyH)); riseWick.addLine(to: CGPoint(x: x, y: lowY))
+                rB.addRect(body)
+                rW.move(to: CGPoint(x: x, y: highY));  rW.addLine(to: CGPoint(x: x, y: bTop))
+                rW.move(to: CGPoint(x: x, y: bTop+bH)); rW.addLine(to: CGPoint(x: x, y: lowY))
             } else if c.close < c.open {
-                fallBody.addRect(body)
-                fallWick.move(to: CGPoint(x: x, y: highY));  fallWick.addLine(to: CGPoint(x: x, y: bodyTop))
-                fallWick.move(to: CGPoint(x: x, y: bodyTop + bodyH)); fallWick.addLine(to: CGPoint(x: x, y: lowY))
+                fB.addRect(body)
+                fW.move(to: CGPoint(x: x, y: highY));  fW.addLine(to: CGPoint(x: x, y: bTop))
+                fW.move(to: CGPoint(x: x, y: bTop+bH)); fW.addLine(to: CGPoint(x: x, y: lowY))
             } else {
-                dojiPath.move(to: CGPoint(x: x - bodyW/2, y: openY))
-                dojiPath.addLine(to: CGPoint(x: x + bodyW/2, y: openY))
-                dojiPath.move(to: CGPoint(x: x, y: highY))
-                dojiPath.addLine(to: CGPoint(x: x, y: lowY))
+                dP.move(to: CGPoint(x: x - bodyW/2, y: openY))
+                dP.addLine(to: CGPoint(x: x + bodyW/2, y: openY))
+                dP.move(to: CGPoint(x: x, y: highY)); dP.addLine(to: CGPoint(x: x, y: lowY))
             }
-            let _ = gIdx // suppress warning
         }
 
-        ctx.addPath(riseBody); ctx.setFillColor(EFColor.rising.cgColor);   ctx.fillPath()
-        ctx.addPath(fallBody); ctx.setFillColor(EFColor.falling.cgColor);  ctx.fillPath()
-        ctx.addPath(riseWick); ctx.setStrokeColor(EFColor.rising.cgColor); ctx.setLineWidth(wickW); ctx.strokePath()
-        ctx.addPath(fallWick); ctx.setStrokeColor(EFColor.falling.cgColor); ctx.strokePath()
-        ctx.addPath(dojiPath); ctx.setStrokeColor(EFColor.neutral.cgColor); ctx.strokePath()
+        ctx.addPath(rB); ctx.setFillColor(EFColor.rising.cgColor);   ctx.fillPath()
+        ctx.addPath(fB); ctx.setFillColor(EFColor.falling.cgColor);  ctx.fillPath()
+        ctx.setLineWidth(0.8)
+        ctx.addPath(rW); ctx.setStrokeColor(EFColor.rising.cgColor); ctx.strokePath()
+        ctx.addPath(fW); ctx.setStrokeColor(EFColor.falling.cgColor); ctx.strokePath()
+        ctx.addPath(dP); ctx.setStrokeColor(EFColor.neutral.cgColor); ctx.strokePath()
     }
 
-    // MARK: ── MA 线 ───────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - MA 均线
+    // ─────────────────────────────────────────────────────────────
 
-    private func drawMALines(ctx: CGContext, maData: [EFMAResult], vis: Range<Int>,
-                              content: CGRect, map: EFCoordMap, cw: CGFloat) {
-        let slotW = content.width / CGFloat(vis.count)
+    private func drawMALines(ctx: CGContext, maData: [EFMAResult],
+                              vis: Range<Int>, cr: CGRect,
+                              pRange: ClosedRange<Double>, cw: CGFloat) {
+        let slotW = cr.width / CGFloat(vis.count)
         for ma in maData {
-            let pts: [CGPoint?] = vis.indices.map { i in
-                let gi = vis.lowerBound + i
+            let pts: [CGPoint?] = vis.enumerated().map { li, gi in
                 guard gi < ma.values.count, let v = ma.values[gi] else { return nil }
-                return CGPoint(x: content.minX + (CGFloat(i) + 0.5) * slotW, y: map.y(v))
+                return CGPoint(x: cr.minX + (CGFloat(li) + 0.5) * slotW,
+                               y: tlR.yFor(price: v, range: pRange, rect: cr))
             }
             ctx.strokePolyline(points: pts, color: ma.color, lineWidth: 1.0)
         }
     }
 
-    // MARK: ── 价格网格 ───────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - 价格网格
+    // ─────────────────────────────────────────────────────────────
 
-    private func drawPriceGrid(ctx: CGContext, rect: CGRect, content: CGRect,
-                                map: EFCoordMap, range: ClosedRange<Double>) {
-        let rows = EFLayout.mainRows
-        let span = range.upperBound - range.lowerBound
+    private func drawPriceGrid(ctx: CGContext, rect: CGRect,
+                                cr: CGRect, pRange: ClosedRange<Double>) {
+        let rows = 5
+        let span = pRange.upperBound - pRange.lowerBound
 
         for i in 0..<rows {
             let ratio = Double(i) / Double(rows - 1)
-            let price = range.upperBound - ratio * span
-            let y     = map.y(price)
-            ctx.strokeLine(from: CGPoint(x: content.minX, y: y),
-                            to:   CGPoint(x: content.maxX, y: y),
-                            color: EFColor.grid, lineWidth: 0.5)
-            ctx.drawString(EFFormat.price(price, decimals: price < 100 ? 3 : 2),
-                            at: CGPoint(x: content.maxX + 3, y: y),
-                            font: EFLayout.axisFont, color: EFColor.textSecondary, align: .left)
+            let price = pRange.upperBound - ratio * span
+            let y     = cr.minY + CGFloat(ratio) * cr.height
+            let dec   = price < 100 ? 3 : 2
+
+            ctx.strokeLine(from: CGPoint(x: cr.minX, y: y),
+                           to:   CGPoint(x: cr.maxX, y: y),
+                           color: EFColor.grid, lineWidth: 0.5)
+            ctx.drawString(EFFormat.price(price, decimals: dec),
+                           at: CGPoint(x: cr.maxX + 3, y: y),
+                           font: EFLayout.axisFont, color: EFColor.textSecondary, align: .left)
         }
-        let cols = EFLayout.mainRows - 1
-        for i in 1..<cols {
-            let x = content.minX + CGFloat(i) / CGFloat(cols) * content.width
-            ctx.strokeLine(from: CGPoint(x: x, y: content.minY),
-                            to:   CGPoint(x: x, y: content.maxY),
-                            color: EFColor.grid, lineWidth: 0.5)
+
+        // 4条垂直网格线
+        for i in 1..<5 {
+            let x = cr.minX + CGFloat(i) / 5.0 * cr.width
+            ctx.strokeLine(from: CGPoint(x: x, y: cr.minY),
+                           to:   CGPoint(x: x, y: cr.maxY),
+                           color: EFColor.grid, lineWidth: 0.5)
         }
-        ctx.setStrokeColor(EFColor.border.cgColor); ctx.setLineWidth(0.5); ctx.stroke(content)
+        ctx.setStrokeColor(EFColor.border.cgColor)
+        ctx.setLineWidth(0.5); ctx.stroke(cr)
     }
 
-    // MARK: ── 时间轴 ─────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - 时间轴
+    // ─────────────────────────────────────────────────────────────
 
-    private func drawTimeAxis(ctx: CGContext, candles: [EFKLinePoint], vis: Range<Int>,
-                               rect: CGRect, content: CGRect, cw: CGFloat, period: EFKPeriod) {
+    private func drawTimeAxis(ctx: CGContext, candles: [EFKLinePoint],
+                               vis: Range<Int>, rect: CGRect,
+                               cr: CGRect, period: EFKPeriod) {
         guard candles.count >= 2 else { return }
-        let slotW  = content.width / CGFloat(candles.count)
-        let ticks  = [0, candles.count/4, candles.count/2, candles.count*3/4, candles.count-1]
-        let y      = content.maxY + EFLayout.timeAxisH/2
-        for t in ticks {
-            guard t < candles.count else { continue }
-            let c = candles[t]
-            let x = content.minX + (CGFloat(t) + 0.5) * slotW
-            let label: String
-            switch period {
-            case .min1,.min5,.min15,.min30,.min60,.min120: label = EFFormat.time(c.time)
-            default: label = EFFormat.date(c.time)
-            }
-            let align: NSTextAlignment = t == 0 ? .left : (t == candles.count-1 ? .right : .center)
+        let slotW  = cr.width / CGFloat(candles.count)
+        let ticks  = stride(from: 0, through: candles.count-1,
+                            by: Swift.max(1, candles.count/4))
+        let y      = cr.maxY + EFLayout.timeAxisH / 2
+
+        for (idx, t) in ticks.enumerated() {
+            let x     = cr.minX + (CGFloat(t) + 0.5) * slotW
+            let label = period.isIntraday ? EFFormat.time(candles[t].time)
+                                          : EFFormat.date(candles[t].time)
+            let align: NSTextAlignment = idx == 0 ? .left : (t == candles.count-1 ? .right : .center)
             ctx.drawString(label, at: CGPoint(x: x, y: y),
-                            font: EFLayout.axisFont, color: EFColor.textSecondary, align: align)
+                           font: EFLayout.axisFont, color: EFColor.textSecondary, align: align)
         }
     }
 
-    // MARK: ── 十字线（K线）──────────────────────────────────
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - 十字线
+    // ─────────────────────────────────────────────────────────────
 
-    private func drawCrosshair(ctx: CGContext, idx: Int, data: EFKLineData, vis: Range<Int>,
-                                rect: CGRect, content: CGRect, map: EFCoordMap, cw: CGFloat) {
-        let c    = data.candles[idx]
-        let slotW = content.width / CGFloat(vis.count)
-        let i    = idx - vis.lowerBound
-        let x    = content.minX + (CGFloat(i) + 0.5) * slotW
-        let y    = map.y(c.close)
+    private func drawCrosshair(ctx: CGContext, idx: Int, data: EFKLineData,
+                                vis: Range<Int>, rect: CGRect, cr: CGRect,
+                                pRange: ClosedRange<Double>, cw: CGFloat) {
+        let c     = data.candles[idx]
+        let slotW = cr.width / CGFloat(vis.count)
+        let li    = idx - vis.lowerBound
+        let x     = cr.minX + (CGFloat(li) + 0.5) * slotW
+        let y     = tlR.yFor(price: c.close, range: pRange, rect: cr)
 
-        ctx.strokeDashedLine(from: CGPoint(x: content.minX, y: y),
-                              to:   CGPoint(x: content.maxX, y: y), color: EFColor.crosshair)
-        ctx.strokeDashedLine(from: CGPoint(x: x, y: content.minY),
-                              to:   CGPoint(x: x, y: content.maxY), color: EFColor.crosshair)
+        ctx.strokeDashedLine(from: CGPoint(x: cr.minX, y: y),
+                             to:   CGPoint(x: cr.maxX, y: y), color: EFColor.crosshair)
+        ctx.strokeDashedLine(from: CGPoint(x: x, y: cr.minY),
+                             to:   CGPoint(x: x, y: cr.maxY), color: EFColor.crosshair)
 
         let pColor = c.isBullish ? EFColor.rising : EFColor.falling
         ctx.drawLabelBadge(EFFormat.price(c.close),
-                            at: CGPoint(x: content.maxX + 1, y: y),
-                            font: EFLayout.axisFont, fg: .white, bg: pColor)
+                           at: CGPoint(x: cr.maxX + 1, y: y),
+                           font: EFLayout.axisFont, fg: .white, bg: pColor)
         ctx.drawLabelBadge(EFFormat.date(c.time),
-                            at: CGPoint(x: x, y: content.maxY + EFLayout.timeAxisH/2),
-                            font: EFLayout.axisFont, fg: EFColor.background, bg: EFColor.crosshairLabel)
+                           at: CGPoint(x: x, y: cr.maxY + EFLayout.timeAxisH/2),
+                           font: EFLayout.axisFont, fg: EFColor.background, bg: EFColor.crosshairLabel)
 
-        // Tooltip
-        let rows: [(String, String, UIColor)] = [
-            ("日期", EFFormat.ymd(c.time),                          EFColor.textPrimary),
-            ("开盘", EFFormat.price(c.open),                        pColor),
-            ("收盘", EFFormat.price(c.close),                       pColor),
-            ("最高", EFFormat.price(c.high),                        EFColor.rising),
-            ("最低", EFFormat.price(c.low),                         EFColor.falling),
-            ("成交量", EFFormat.volume(c.volume),                   EFColor.textPrimary),
+        tlR.drawTooltip(ctx: ctx, rows: [
+            ("日期",  EFFormat.ymd(c.time),                          EFColor.textPrimary),
+            ("开盘",  EFFormat.price(c.open),                        pColor),
+            ("收盘",  EFFormat.price(c.close),                       pColor),
+            ("最高",  EFFormat.price(c.high),                        EFColor.rising),
+            ("最低",  EFFormat.price(c.low),                         EFColor.falling),
+            ("成交量", EFFormat.volume(c.volume),                    EFColor.textPrimary),
             ("涨跌幅", EFFormat.percent(c.changePercent, signed: true), pColor),
-        ]
-        tlRenderer.drawTooltip(ctx: ctx, rows: rows, at: CGPoint(x: x, y: y), content: content)
+        ], at: CGPoint(x: x, y: y), cr: cr)
     }
 
-    // MARK: ── 副图绘制 ───────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - 副图
+    // ─────────────────────────────────────────────────────────────
 
-    private func drawSub(ctx: CGContext, data: EFKLineData, subIndex: Int, rect: CGRect,
-                          vis: Range<Int>, cw: CGFloat, crosshairIdx: Int?) {
-        ctx.setFillColor(EFColor.panel.cgColor); ctx.fill(rect)
-        let content = subContentRect(rect)
-        ctx.setStrokeColor(EFColor.border.cgColor); ctx.setLineWidth(0.5); ctx.stroke(content)
+    private func drawSub(ctx: CGContext, data: EFKLineData, subIndex: Int,
+                          rect: CGRect, vis: Range<Int>, cw: CGFloat, ci: Int?) {
+        let cr      = subContentRect(rect)
+        let safeVis = tlR.clampRange(vis, count: data.candles.count)
 
-        let safeVis = clampVis(vis, count: data.candles.count)
+        ctx.setStrokeColor(EFColor.border.cgColor)
+        ctx.setLineWidth(0.5); ctx.stroke(cr)
 
         switch data.subData[subIndex] {
-        case .volume(let vd):
-            drawVolumeSub(ctx: ctx, vd: vd, vis: safeVis, content: content,
-                           cw: cw, crosshairIdx: crosshairIdx)
         case .macd(let md):
-            // 传入 safeVis 确保 MACD 与主图 K 线可见区间完全同步
-            tlRenderer.drawMACDSub(ctx: ctx, result: md,
-                                    visibleRange: safeVis,
-                                    content: content,
-                                    crosshairIdx: crosshairIdx)
-            // 图例显示可见区间最后一个值
-            let lastI = safeVis.upperBound - 1
-            let difV = lastI < md.dif.count ? md.dif[lastI] : nil
-            let deaV = lastI < md.dea.count ? md.dea[lastI] : nil
-            let barV = lastI < md.bar.count ? md.bar[lastI] : nil
-            drawSubLabel(ctx: ctx, content: content, text: "MACD",
-                          vals: [("DIF", difV, EFColor.difLine),
-                                 ("DEA", deaV, EFColor.deaLine),
-                                 ("M",   barV, EFColor.rising)])
+            tlR.drawMACDContent(ctx: ctx, macd: md, visRange: safeVis,
+                                total: safeVis.count, cr: cr, crosshairIdx: ci)
+            // 图例：画在 imageView 顶部（cr 上方，不重叠）
+            let lastI  = safeVis.upperBound - 1
+            let legend = tlR.makeMACDLegend(macd: md, idx: lastI)
+            ctx.drawString(legend, at: CGPoint(x: rect.minX + 4, y: rect.minY + 10),
+                           font: EFLayout.axisFont, color: EFColor.textSecondary, align: .left)
+
         case .kdj(let kd):
-            drawKDJSub(ctx: ctx, kd: kd, vis: safeVis, content: content,
-                        cw: cw, crosshairIdx: crosshairIdx)
+            drawKDJ(ctx: ctx, kd: kd, vis: safeVis, cr: cr, ci: ci)
+            let gi    = safeVis.upperBound - 1
+            drawSubLegend(ctx: ctx, rect: rect, text: "KDJ", vals: [
+                ("K", gi < kd.k.count ? kd.k[gi] : nil, EFColor.kLine),
+                ("D", gi < kd.d.count ? kd.d[gi] : nil, EFColor.dLine),
+                ("J", gi < kd.j.count ? kd.j[gi] : nil, EFColor.jLine),
+            ])
+
+        case .volume(let vd):
+            drawVolume(ctx: ctx, vd: vd, candles: data.candles, vis: safeVis, cr: cr, ci: ci)
+            let gi     = safeVis.upperBound - 1
+            let vol    = gi < vd.volumes.count ? vd.volumes[gi] : 0
+            let ma1v   = gi < vd.ma1.count ? vd.ma1[gi] : nil
+            let ma2v   = gi < vd.ma2.count ? vd.ma2[gi] : nil
+            var legend = "成交量 \(EFFormat.volume(vol))"
+            if let v = ma1v { legend += "  MA5:\(EFFormat.volume(v))" }
+            if let v = ma2v { legend += "  MA10:\(EFFormat.volume(v))" }
+            ctx.drawString(legend, at: CGPoint(x: rect.minX + 4, y: rect.minY + 10),
+                           font: EFLayout.axisFont, color: EFColor.textSecondary, align: .left)
+
         case .rsi(let rd):
-            drawRSISub(ctx: ctx, rd: rd, vis: safeVis, content: content,
-                        cw: cw, crosshairIdx: crosshairIdx)
+            drawRSI(ctx: ctx, rd: rd, vis: safeVis, cr: cr, ci: ci)
+            let gi  = safeVis.upperBound - 1
+            let val = gi < rd.values.count ? rd.values[gi] : nil
+            drawSubLegend(ctx: ctx, rect: rect, text: "RSI(\(rd.period))", vals: [
+                ("RSI", val, EFColor.ma5)
+            ])
         }
     }
 
-    private func drawVolumeSub(ctx: CGContext, vd: EFVolumeResult, vis: Range<Int>,
-                                content: CGRect, cw: CGFloat, crosshairIdx: Int?) {
-        guard vis.count > 0 else { return }
-        let visVols  = Array(vd.volumes[vis])
-        let maxVol   = visVols.max() ?? 1
-        let slotW    = content.width / CGFloat(vis.count)
-        let bodyW    = Swift.max(1, slotW * (1 - EFLayout.candleGap))
-        let map      = EFCoordMap(rect: content, minV: 0, maxV: maxVol)
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - KDJ
+    // ─────────────────────────────────────────────────────────────
 
-        ctx.saveGState()
-        ctx.clip(to: content)
-        let upP = CGMutablePath(), dnP = CGMutablePath()
-        for (i, gi) in vis.enumerated() {
-            guard gi < vd.volumes.count else { continue }
-            let v   = vd.volumes[gi]
-            let x   = content.minX + (CGFloat(i) + 0.5) * slotW
-            let h   = content.height * CGFloat(v / maxVol)
-            let r   = CGRect(x: x - bodyW/2, y: content.maxY - h, width: bodyW, height: h)
-            let bull = gi < vd.isBullish.count ? vd.isBullish[gi] : true
-            if bull { upP.addRect(r) } else { dnP.addRect(r) }
-        }
-        ctx.addPath(upP); ctx.setFillColor(EFColor.rising.withAlphaComponent(0.85).cgColor); ctx.fillPath()
-        ctx.addPath(dnP); ctx.setFillColor(EFColor.falling.withAlphaComponent(0.85).cgColor); ctx.fillPath()
-        ctx.restoreGState()
-
-        // MA 线
-        func volLine(_ vals: [Double?], color: UIColor) {
-            let pts: [CGPoint?] = vis.enumerated().map { i, gi in
-                guard gi < vals.count, let v = vals[gi] else { return nil }
-                return CGPoint(x: content.minX + (CGFloat(i) + 0.5) * slotW, y: map.y(v))
-            }
-            ctx.strokePolyline(points: pts, color: color, lineWidth: 1.0)
-        }
-        volLine(vd.ma1, color: EFColor.volMa1)
-        volLine(vd.ma2, color: EFColor.volMa2)
-
-        // 十字线
-        if let ci = crosshairIdx, vis.contains(ci) {
-            let i = ci - vis.lowerBound
-            let x = content.minX + (CGFloat(i) + 0.5) * slotW
-            ctx.strokeDashedLine(from: CGPoint(x: x, y: content.minY),
-                                  to:   CGPoint(x: x, y: content.maxY),
-                                  color: EFColor.crosshair, lineWidth: 0.5)
-        }
-
-        // 图例
-        let lastIdx = Swift.max(0, vis.upperBound - 1)
-        let lastVol = lastIdx < vd.volumes.count ? vd.volumes[lastIdx] : 0
-        let ma1v    = lastIdx < vd.ma1.count ? vd.ma1[lastIdx] : nil
-        let ma2v    = lastIdx < vd.ma2.count ? vd.ma2[lastIdx] : nil
-        var legend  = "成交量 \(EFFormat.volume(lastVol))"
-        if let v = ma1v { legend += "  MA5:\(EFFormat.volume(v))" }
-        if let v = ma2v { legend += "  MA10:\(EFFormat.volume(v))" }
-        ctx.drawString(legend, at: CGPoint(x: content.minX + 4, y: content.minY + 7),
-                        font: EFLayout.axisFont, color: EFColor.textSecondary, align: .left)
-    }
-
-    private func drawKDJSub(ctx: CGContext, kd: EFKDJResult, vis: Range<Int>,
-                              content: CGRect, cw: CGFloat, crosshairIdx: Int?) {
-        // J 值可能超过 100 或低于 0，动态计算实际范围防止溢出
+    private func drawKDJ(ctx: CGContext, kd: EFKDJResult,
+                          vis: Range<Int>, cr: CGRect, ci: Int?) {
         let visK = vis.compactMap { $0 < kd.k.count ? kd.k[$0] : nil }
         let visD = vis.compactMap { $0 < kd.d.count ? kd.d[$0] : nil }
         let visJ = vis.compactMap { $0 < kd.j.count ? kd.j[$0] : nil }
-        let allVis = visK + visD + visJ
-        let rawMin = (allVis.min() ?? 0)
-        let rawMax = (allVis.max() ?? 100)
+        let all  = visK + visD + visJ
+        guard !all.isEmpty else { return }
+
+        let rawMin = (all.min() ?? 0)
+        let rawMax = (all.max() ?? 100)
         let pad    = (rawMax - rawMin) * 0.12
-        let minV   = Swift.min(rawMin - pad, 0)
-        let maxV   = Swift.max(rawMax + pad, 100)
-        let map    = EFCoordMap(rect: content, minV: minV, maxV: maxV)
-        let slotW  = content.width / CGFloat(vis.count)
+        let pRange = (Swift.min(rawMin - pad, 0))...(Swift.max(rawMax + pad, 100))
+        let slotW  = cr.width / CGFloat(vis.count)
 
-        // Clip 到 content 区域，防止 J 线超出图表边界
-        ctx.saveGState()
-        ctx.clip(to: content)
+        ctx.saveGState(); ctx.clip(to: cr)
 
-        // 超买超卖参考线
         for level in [20.0, 50.0, 80.0] {
-            let y = map.y(level)
-            ctx.strokeDashedLine(from: CGPoint(x: content.minX, y: y),
-                                  to:   CGPoint(x: content.maxX, y: y),
-                                  color: EFColor.grid, lineWidth: 0.3, dash: [2, 2])
+            let y = tlR.yFor(price: level, range: pRange, rect: cr)
+            ctx.strokeDashedLine(from: CGPoint(x: cr.minX, y: y),
+                                 to:   CGPoint(x: cr.maxX, y: y),
+                                 color: EFColor.grid, lineWidth: 0.3, dash: [2, 2])
         }
 
         func line(_ vals: [Double], color: UIColor) {
-            let pts: [CGPoint?] = vis.enumerated().map { i, gi in
+            let ps: [CGPoint?] = vis.enumerated().map { li, gi in
                 guard gi < vals.count else { return nil }
-                return CGPoint(x: content.minX + (CGFloat(i) + 0.5) * slotW, y: map.y(vals[gi]))
+                return CGPoint(x: cr.minX + (CGFloat(li) + 0.5) * slotW,
+                               y: tlR.yFor(price: vals[gi], range: pRange, rect: cr))
             }
-            ctx.strokePolyline(points: pts, color: color, lineWidth: 1.0)
+            ctx.strokePolyline(points: ps, color: color, lineWidth: 1.0)
         }
         line(kd.k, color: EFColor.kLine)
         line(kd.d, color: EFColor.dLine)
         line(kd.j, color: EFColor.jLine)
-
-        ctx.restoreGState()  // 恢复 clip
-
-        // 右侧参考线标签（在 clip 外绘制，避免被裁剪）
-        for level in [20.0, 80.0] {
-            ctx.drawString("\(Int(level))", at: CGPoint(x: content.maxX + 3, y: map.y(level)),
-                            font: EFLayout.axisFont, color: EFColor.textSecondary, align: .left)
-        }
-
-        // 十字线
-        if let ci = crosshairIdx, vis.contains(ci) {
-            let i = ci - vis.lowerBound
-            let x = content.minX + (CGFloat(i) + 0.5) * slotW
-            ctx.strokeDashedLine(from: CGPoint(x: x, y: content.minY),
-                                  to:   CGPoint(x: x, y: content.maxY),
-                                  color: EFColor.crosshair, lineWidth: 0.5)
-        }
-
-        let gi = Swift.max(0, vis.upperBound - 1)
-        drawSubLabel(ctx: ctx, content: content, text: "KDJ",
-                      vals: [("K", gi < kd.k.count ? kd.k[gi] : nil, EFColor.kLine),
-                             ("D", gi < kd.d.count ? kd.d[gi] : nil, EFColor.dLine),
-                             ("J", gi < kd.j.count ? kd.j[gi] : nil, EFColor.jLine)])
-    }
-
-    private func drawRSISub(ctx: CGContext, rd: EFRSIResult, vis: Range<Int>,
-                              content: CGRect, cw: CGFloat, crosshairIdx: Int?) {
-        let map   = EFCoordMap(rect: content, minV: 0, maxV: 100)
-        let slotW = content.width / CGFloat(vis.count)
-
-        // Clip 防止超出
-        ctx.saveGState()
-        ctx.clip(to: content)
-
-        for level in [30.0, 70.0] {
-            let y = map.y(level)
-            ctx.strokeDashedLine(from: CGPoint(x: content.minX, y: y),
-                                  to:   CGPoint(x: content.maxX, y: y),
-                                  color: EFColor.grid, lineWidth: 0.3, dash: [2, 2])
-        }
-
-        let pts: [CGPoint?] = vis.enumerated().map { i, gi in
-            guard gi < rd.values.count else { return nil }
-            return CGPoint(x: content.minX + (CGFloat(i) + 0.5) * slotW, y: map.y(rd.values[gi]))
-        }
-        ctx.strokePolyline(points: pts, color: EFColor.ma5, lineWidth: 1.0)
         ctx.restoreGState()
 
-        if let ci = crosshairIdx, vis.contains(ci) {
-            let i = ci - vis.lowerBound
-            let x = content.minX + (CGFloat(i) + 0.5) * slotW
-            ctx.strokeDashedLine(from: CGPoint(x: x, y: content.minY),
-                                  to:   CGPoint(x: x, y: content.maxY),
-                                  color: EFColor.crosshair, lineWidth: 0.5)
+        // 右侧参考刻度（在 clip 外画，不被裁剪）
+        for level in [20.0, 80.0] {
+            let y = tlR.yFor(price: level, range: pRange, rect: cr)
+            ctx.drawString("\(Int(level))", at: CGPoint(x: cr.maxX + 3, y: y),
+                           font: EFLayout.axisFont, color: EFColor.textSecondary, align: .left)
         }
 
-        let gi  = Swift.max(0, vis.upperBound - 1)
-        let val = gi < rd.values.count ? rd.values[gi] : nil
-        drawSubLabel(ctx: ctx, content: content, text: "RSI(\(rd.period))",
-                      vals: [("RSI", val, EFColor.ma5)])
+        if let idx = ci, vis.contains(idx) {
+            let x = cr.minX + (CGFloat(idx - vis.lowerBound) + 0.5) * slotW
+            ctx.strokeDashedLine(from: CGPoint(x: x, y: cr.minY),
+                                 to:   CGPoint(x: x, y: cr.maxY), color: EFColor.crosshair)
+        }
     }
 
-    // MARK: ── 副图标题图例 ────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - 成交量
+    // ─────────────────────────────────────────────────────────────
 
-    private func drawSubLabel(ctx: CGContext, content: CGRect, text: String,
-                               vals: [(String, Double?, UIColor)]) {
-        var x = content.minX + 4
-        let y = content.minY + 7
+    private func drawVolume(ctx: CGContext, vd: EFVolumeResult,
+                             candles: [EFKLinePoint], vis: Range<Int>,
+                             cr: CGRect, ci: Int?) {
+        let visVols = vis.compactMap { $0 < vd.volumes.count ? vd.volumes[$0] : nil }
+        let maxVol  = visVols.max() ?? 1
+        let slotW   = cr.width / CGFloat(vis.count)
+        let bodyW   = Swift.max(1, slotW * (1 - EFLayout.candleGap))
+
+        ctx.saveGState(); ctx.clip(to: cr)
+
+        let upP = CGMutablePath(), dnP = CGMutablePath()
+        for (li, gi) in vis.enumerated() {
+            guard gi < vd.volumes.count else { continue }
+            let v    = vd.volumes[gi]
+            let bull = gi < vd.isBullish.count ? vd.isBullish[gi] : true
+            let x    = cr.minX + (CGFloat(li) + 0.5) * slotW
+            let h    = cr.height * CGFloat(v / maxVol)
+            let r    = CGRect(x: x - bodyW/2, y: cr.maxY - h, width: bodyW, height: h)
+            bull ? upP.addRect(r) : dnP.addRect(r)
+        }
+        ctx.addPath(upP); ctx.setFillColor(EFColor.rising.withAlphaComponent(0.85).cgColor); ctx.fillPath()
+        ctx.addPath(dnP); ctx.setFillColor(EFColor.falling.withAlphaComponent(0.85).cgColor); ctx.fillPath()
+
+        // MA 线
+        func volLine(_ vals: [Double?], color: UIColor) {
+            let ps: [CGPoint?] = vis.enumerated().map { li, gi in
+                guard gi < vals.count, let v = vals[gi] else { return nil }
+                let y = cr.maxY - cr.height * CGFloat(v / maxVol)
+                return CGPoint(x: cr.minX + (CGFloat(li) + 0.5) * slotW, y: y)
+            }
+            ctx.strokePolyline(points: ps, color: color, lineWidth: 1.0)
+        }
+        volLine(vd.ma1, color: EFColor.volMa1)
+        volLine(vd.ma2, color: EFColor.volMa2)
+
+        if let idx = ci, vis.contains(idx) {
+            let x = cr.minX + (CGFloat(idx - vis.lowerBound) + 0.5) * slotW
+            ctx.strokeDashedLine(from: CGPoint(x: x, y: cr.minY),
+                                 to:   CGPoint(x: x, y: cr.maxY), color: EFColor.crosshair)
+        }
+        ctx.restoreGState()
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - RSI
+    // ─────────────────────────────────────────────────────────────
+
+    private func drawRSI(ctx: CGContext, rd: EFRSIResult,
+                          vis: Range<Int>, cr: CGRect, ci: Int?) {
+        let pRange = 0.0...100.0
+        let slotW  = cr.width / CGFloat(vis.count)
+
+        ctx.saveGState(); ctx.clip(to: cr)
+
+        for level in [30.0, 70.0] {
+            let y = tlR.yFor(price: level, range: pRange, rect: cr)
+            ctx.strokeDashedLine(from: CGPoint(x: cr.minX, y: y),
+                                 to:   CGPoint(x: cr.maxX, y: y),
+                                 color: EFColor.grid, lineWidth: 0.3, dash: [2, 2])
+        }
+        let ps: [CGPoint?] = vis.enumerated().map { li, gi in
+            guard gi < rd.values.count else { return nil }
+            return CGPoint(x: cr.minX + (CGFloat(li) + 0.5) * slotW,
+                           y: tlR.yFor(price: rd.values[gi], range: pRange, rect: cr))
+        }
+        ctx.strokePolyline(points: ps, color: EFColor.ma5, lineWidth: 1.0)
+
+        if let idx = ci, vis.contains(idx) {
+            let x = cr.minX + (CGFloat(idx - vis.lowerBound) + 0.5) * slotW
+            ctx.strokeDashedLine(from: CGPoint(x: x, y: cr.minY),
+                                 to:   CGPoint(x: x, y: cr.maxY), color: EFColor.crosshair)
+        }
+        ctx.restoreGState()
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - 副图图例（统一画在 imageView 顶部 y=10）
+    // ─────────────────────────────────────────────────────────────
+
+    private func drawSubLegend(ctx: CGContext, rect: CGRect,
+                                text: String,
+                                vals: [(String, Double?, UIColor)]) {
+        var x    = rect.minX + 4
+        let y    = rect.minY + 10   // imageView 顶部，不与图表内容重叠
+
         ctx.drawString(text + " ", at: CGPoint(x: x, y: y),
-                        font: EFLayout.infoFont, color: EFColor.textSecondary, align: .left)
-        x += (text as NSString).size(withAttributes: [.font: EFLayout.infoFont]).width + 6
+                       font: EFLayout.infoFont, color: EFColor.textSecondary, align: .left)
+        x += (text as NSString).size(withAttributes: [.font: EFLayout.infoFont]).width + 4
 
         for (label, val, color) in vals {
             guard let v = val else { continue }
             let s = "\(label):\(EFFormat.price(v, decimals: 2))  "
-            ctx.drawString(s, at: CGPoint(x: x, y: y), font: EFLayout.infoFont, color: color, align: .left)
+            ctx.drawString(s, at: CGPoint(x: x, y: y),
+                           font: EFLayout.infoFont, color: color, align: .left)
             x += (s as NSString).size(withAttributes: [.font: EFLayout.infoFont]).width
         }
     }
 
-    // MARK: ── 工具 ───────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────
+    // MARK: - 工具方法
+    // ─────────────────────────────────────────────────────────────
 
     func mainContentRect(_ rect: CGRect) -> CGRect {
-        CGRect(x: rect.minX, y: rect.minY + EFLayout.infoBarH + EFLayout.topPad,
+        // rect = mainImageView.bounds；infoBar 是独立 UIView，不在这里减
+        CGRect(x: rect.minX, y: rect.minY + EFLayout.topPad,
                width: rect.width - EFLayout.priceAxisW,
-               height: rect.height - EFLayout.infoBarH - EFLayout.topPad - EFLayout.timeAxisH)
+               height: rect.height - EFLayout.topPad - EFLayout.timeAxisH)
     }
 
     func subContentRect(_ rect: CGRect) -> CGRect {
-        // rect = imageView 尺寸（titleBar 已在 UIView 层级中，不在这里）
-        // 副图不画时间轴，只留 2pt 上边距和 2pt 下边距
-        CGRect(x: rect.minX, y: rect.minY + 2,
-               width: rect.width - EFLayout.priceAxisW,
-               height: rect.height - 4)
+        // rect = sub imageView.bounds；顶部 16pt 留图例，底部 2pt
+        let labelH: CGFloat = 16
+        return CGRect(x: rect.minX, y: rect.minY + labelH,
+                      width: rect.width - EFLayout.priceAxisW,
+                      height: rect.height - labelH - 2)
     }
 
-    private func computePriceRange(candles: [EFKLinePoint], maData: [EFMAResult],
+    private func computePriceRange(candles: [EFKLinePoint],
+                                    maData: [EFMAResult],
                                     vis: Range<Int>) -> ClosedRange<Double> {
-        var lo = candles.map(\.low).min() ?? 0
+        var lo = candles.map(\.low).min()  ?? 0
         var hi = candles.map(\.high).max() ?? 1
         for ma in maData {
-            let vs = Array(ma.values[vis]).compactMap { $0 }
+            let vs = vis.compactMap { $0 < ma.values.count ? ma.values[$0] : nil }
+                       .compactMap { $0 }
             if let v = vs.min() { lo = Swift.min(lo, v) }
             if let v = vs.max() { hi = Swift.max(hi, v) }
         }
@@ -470,19 +493,18 @@ final class EFKLineRenderer {
         return (lo - pad)...(hi + pad)
     }
 
-    private func clampVis(_ vis: Range<Int>, count: Int) -> Range<Int> {
-        let s = Swift.max(0, vis.lowerBound)
-        let e = Swift.min(count, vis.upperBound)
-        return s < e ? s..<e : 0..<Swift.min(50, count)
+    private func makeCtx(_ size: CGSize) -> CGContext? {
+        makeOffscreenContext(size: size, scale: scale)
     }
 }
 
-// Swift 5.7: Array subscript with Range<Int>
-private extension Array {
-    subscript(safe range: Range<Int>) -> ArraySlice<Element> {
-        let s = Swift.max(0, range.lowerBound)
-        let e = Swift.min(count, range.upperBound)
-        guard s < e else { return [] }
-        return self[s..<e]
+// MARK: - EFKPeriod helpers
+
+private extension EFKPeriod {
+    var isIntraday: Bool {
+        switch self {
+        case .min1, .min5, .min15, .min30, .min60, .min120: return true
+        default: return false
+        }
     }
 }

@@ -6,7 +6,6 @@
 //  Copyright © 2026 min Lee. All rights reserved.
 //
 
-// DemoViewController.swift
 // 完整接入示例 — 开箱即用 Demo
 // 直接设为 App 的 rootViewController 即可看到效果
 

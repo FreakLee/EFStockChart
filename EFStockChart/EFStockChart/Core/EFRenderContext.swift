@@ -6,7 +6,6 @@
 //  Copyright © 2026 min Lee. All rights reserved.
 //
 
-// EFRenderContext.swift
 // 渲染工具集 — 坐标映射、文字绘制、路径工具
 
 import UIKit

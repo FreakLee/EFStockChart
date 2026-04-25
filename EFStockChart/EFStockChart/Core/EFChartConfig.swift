@@ -6,7 +6,6 @@
 //  Copyright © 2026 min Lee. All rights reserved.
 //
 
-// EFChartConfig.swift
 // 图表运行时配置（可在外部修改，影响渲染行为）
 
 import UIKit

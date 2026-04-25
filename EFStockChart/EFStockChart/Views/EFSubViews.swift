@@ -6,7 +6,6 @@
 //  Copyright © 2026 min Lee. All rights reserved.
 //
 
-// EFSubViews.swift
 // 所有辅助子视图：周期栏、MA信息行、盘口视图、十字线层
 
 import UIKit
@@ -51,7 +50,13 @@ public final class EFPeriodBar: UIView {
             btn.setTitle(item.0, for: .normal)
             btn.titleLabel?.font = .systemFont(ofSize: 13)
             btn.setTitleColor(EFColor.textSecondary, for: .normal)
-            btn.contentEdgeInsets = UIEdgeInsets(top: 0, left: 8, bottom: 0, right: 8)
+            if #available(iOS 15.0, *) {
+                var config = UIButton.Configuration.plain()
+                config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8)
+                btn.configuration = config
+            } else {
+                btn.contentEdgeInsets = UIEdgeInsets(top: 0, left: 8, bottom: 0, right: 8)
+            }
             btn.tag = i
             btn.addTarget(self, action: #selector(mainBtnTap(_:)), for: .touchUpInside)
             hStack.addArrangedSubview(btn)
@@ -61,7 +66,13 @@ public final class EFPeriodBar: UIView {
         moreBtn.setTitle("更多 ▾", for: .normal)
         moreBtn.titleLabel?.font = .systemFont(ofSize: 13)
         moreBtn.setTitleColor(EFColor.textSecondary, for: .normal)
-        moreBtn.contentEdgeInsets = UIEdgeInsets(top: 0, left: 8, bottom: 0, right: 8)
+        if #available(iOS 15.0, *) {
+            var config = UIButton.Configuration.plain()
+            config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8)
+            moreBtn.configuration = config
+        } else {
+            moreBtn.contentEdgeInsets = UIEdgeInsets(top: 0, left: 8, bottom: 0, right: 8)
+        }
         moreBtn.addTarget(self, action: #selector(showMore), for: .touchUpInside)
         hStack.addArrangedSubview(moreBtn)
 

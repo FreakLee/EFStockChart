@@ -6,7 +6,6 @@
 //  Copyright © 2026 min Lee. All rights reserved.
 //
 
-// EFChartTheme.swift
 // 主题系统 — 精确对应东方财富截图配色
 
 import UIKit

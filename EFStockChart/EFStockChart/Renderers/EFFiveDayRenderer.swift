@@ -6,7 +6,6 @@
 //  Copyright © 2026 min Lee. All rights reserved.
 //
 
-// EFFiveDayRenderer.swift
 // 五日分时图渲染器（复用 EFTimelineRenderer 扩展）
 // 五日分时 = 5个交易日连接在一起，每天240分钟，共1200个数据点
 // 区别于单日分时：底部时间轴显示每天的日期，不显示HH:mm

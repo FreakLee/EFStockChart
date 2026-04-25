@@ -6,7 +6,6 @@
 //  Copyright © 2026 min Lee. All rights reserved.
 //
 
-// EFIndicatorEngine.swift
 // 技术指标计算引擎 — 全部 O(n)，Swift 5.7 兼容
 
 import Foundation

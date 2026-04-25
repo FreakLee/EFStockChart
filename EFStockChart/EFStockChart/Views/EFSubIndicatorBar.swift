@@ -6,7 +6,6 @@
 //  Copyright © 2026 min Lee. All rights reserved.
 //
 
-// EFSubIndicatorBar.swift
 // 副图指标切换栏（K线图底部每个副图左上角的下拉按钮）
 // 对应截图中的 "MACD ▼" "成交量 ▼" "KDJ ▼" 按钮
 

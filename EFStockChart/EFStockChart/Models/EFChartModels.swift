@@ -6,7 +6,6 @@
 //  Copyright © 2026 min Lee. All rights reserved.
 //
 
-// EFChartModels.swift
 // 数据模型层 — 值语义(struct)，并发安全，完整覆盖个股+指数两种形态
 
 import Foundation

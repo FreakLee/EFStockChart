@@ -6,7 +6,6 @@
 //  Copyright © 2026 min Lee. All rights reserved.
 //
 
-// EFMockData.swift
 // 完整 Mock 数据 — 可直接运行验证
 
 import Foundation
@@ -30,7 +29,7 @@ public enum EFMockData {
         for i in 0..<120 {
             comps.hour = 9; comps.minute = 30 + i
             let t = cal.date(from: comps)!
-            let delta = Double.random(in: -0.008...0.008)
+            _ = Double.random(in: -0.008...0.008)
             price = (prevClose * (1 + Double.random(in: -0.03...0.03)))
                 .clamped(lo: prevClose * 0.9, hi: prevClose * 1.1)
             if i == 0 { price = 1465.02 }
@@ -57,7 +56,7 @@ public enum EFMockData {
                                     volume: vol, amount: amount, changePercent: chg))
         }
         // 收盘价靠近截图数值
-        if var last = pts.last {
+        if let last = pts.last {
             let finalPrice = 1460.49
             let chg = (finalPrice - prevClose) / prevClose * 100
             pts[pts.count-1] = EFTimePoint(time: last.time, price: finalPrice,

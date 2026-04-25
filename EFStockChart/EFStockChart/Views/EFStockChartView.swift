@@ -6,13 +6,11 @@
 //  Copyright © 2026 min Lee. All rights reserved.
 //
 
-// EFStockChartView.swift
-// 主图表容器视图 — iOS 15+，Swift 5.7 兼容
-// 零第三方依赖，纯 UIKit + Core Graphics
+// 主图表容器视图 — 副图可插拔
 
 import UIKit
 
-// MARK: ── Delegate ──────────────────────────────────────────
+// MARK: - Delegate
 
 public protocol EFStockChartViewDelegate: AnyObject {
     /// 用户切换了周期（分时/五日/日K等）
@@ -32,59 +30,59 @@ public extension EFStockChartViewDelegate {
     func chartView(_ v: EFStockChartView, visibleRangeChanged r: Range<Int>) {}
 }
 
-// MARK: ── EFStockChartView ──────────────────────────────────
+// MARK: - EFStockChartView
 
 public final class EFStockChartView: UIView {
 
-    // ─────────────────────── 公开属性 ───────────────────────
+    // ── 公开
     public weak var delegate: EFStockChartViewDelegate?
-    public var config = EFChartConfig.shared { didSet { triggerFullRedraw() } }
     public private(set) var currentPeriod: EFChartPeriod = .timeline
 
-    // ─────────────────────── 数据 ───────────────────────────
+    // ── 数据
     private var timelineData: EFTimelineData?
     private var kLineData:    EFKLineData?
 
-    // ─────────────────────── 渲染器 ─────────────────────────
-    private let tlRenderer = EFTimelineRenderer()
-    private let klRenderer = EFKLineRenderer()
+    // ── 渲染器（不持有状态，纯函数）
+    private let tlR = EFTimelineRenderer()
+    private let klR = EFKLineRenderer()
 
-    // ─────────────────────── K线状态 ────────────────────────
-    private var visibleRange: Range<Int> = 0..<50
-    private var candleWidth:  CGFloat    = EFLayout.candleDefW
-    private var pinchStartCW: CGFloat    = EFLayout.candleDefW
+    // ── K线状态
+    private var visibleRange:  Range<Int> = 0..<50
+    private var candleWidth:   CGFloat    = EFLayout.candleDefW
+    private var pinchStartCW:  CGFloat    = EFLayout.candleDefW
     private var panStartRange: Range<Int> = 0..<50
 
-    // ─────────────────────── 十字线 ─────────────────────────
+    // ── 十字线
     private var crosshairActive = false
     private var crosshairIndex  = 0
 
-    // ─────────────────────── 渲染队列 ───────────────────────
-    private let renderQ = DispatchQueue(label: "ef.chart.render", qos: .userInteractive)
+    // ── 渲染队列
+    private let renderQ   = DispatchQueue(label: "ef.render", qos: .userInteractive)
     private var renderToken = UUID()
 
-    // ─────────────────────── 子视图 ─────────────────────────
+    // ──────────────────────────── 子视图 ────────────────────────────
+
     /// 周期切换栏（分时/五日/日K/周K/月K/更多）
     public  let periodBar      = EFPeriodBar()
-    /// K线 MA 信息行
+    /// K线 MA 信息行（只在 K线 模式下显示）
     private let infoBar        = EFInfoBar()
     /// 主图 ImageView
     private let mainImageView  = UIImageView()
-    /// 十字线覆盖层（独立于主图刷新）
+    /// 十字线覆盖层（高频刷新，独立于主图）
     private let crosshairLayer = EFCrosshairLayer()
-    /// 副图面板数组（最多 4 个）
+    /// 副图面板（最多 4 个，可插拔）
     private var subPanels      = [EFSubPanel]()
-    /// 个股分时右侧盘口
+    /// 个股分时右侧盘口（securityType == .stock 时显示）
     private let orderBookView  = EFOrderBookView()
 
-    // ─────────────────────── Init ───────────────────────────
+    // ────────────────────────── Init ────────────────────────────────
 
     public override init(frame: CGRect) { super.init(frame: frame); setup() }
     public required init?(coder: NSCoder) { super.init(coder: coder); setup() }
 
     private func setup() {
         backgroundColor = EFColor.background
-        mainImageView.contentMode = .scaleToFill  // CGImage 已是精确尺寸，不需缩放
+        mainImageView.contentMode = .scaleToFill
         crosshairLayer.isUserInteractionEnabled = false
 
         addSubview(periodBar)
@@ -98,12 +96,13 @@ public final class EFStockChartView: UIView {
         // 预创建 4 个副图面板（按需显示/隐藏）
         for i in 0..<4 {
             let panel = EFSubPanel()
+            panel.imageView.contentMode = .scaleToFill
             panel.setIndicator(defaultIndicator(for: i))
             panel.isHidden = true
             panel.titleBar.onIndicatorChanged = { [weak self, weak panel] ind in
                 guard let self = self, let panel = panel else { return }
                 panel.setIndicator(ind)
-                self.triggerSubRedraw(panel: panel)
+                self.renderSinglePanel(panel: panel)
             }
             addSubview(panel)
             subPanels.append(panel)
@@ -112,76 +111,61 @@ public final class EFStockChartView: UIView {
         setupGestures()
     }
 
-    // ─────────────────────── 布局 ───────────────────────────
+    // ────────────────────────── 布局 ────────────────────────────────
 
     public override func layoutSubviews() {
         super.layoutSubviews()
         updateFrames()
-        triggerFullRedraw()
+        triggerRender()
     }
 
     private func updateFrames() {
         let w = bounds.width, h = bounds.height
         var y: CGFloat = 0
 
-        // 1. 周期栏
+        // 1. 周期切换栏
         periodBar.frame = CGRect(x: 0, y: y, width: w, height: EFLayout.periodBarH)
         y += EFLayout.periodBarH
 
-        // 2. K线 MA 信息行（分时图不显示）
-        let isKLine = isKLinePeriod
-        infoBar.isHidden = !isKLine
-        if isKLine {
+        // 2. K线 MA 信息行
+        let showInfo = isKLinePeriod
+        infoBar.isHidden = !showInfo
+        if showInfo {
             infoBar.frame = CGRect(x: 0, y: y, width: w, height: EFLayout.infoBarH)
             y += EFLayout.infoBarH
         }
 
-        // 3. 计算剩余高度
+        // 3. 计算图表宽度（个股分时：右侧盘口）
+        let isStockTL = (currentPeriod == .timeline || currentPeriod == .fiveDay)
+            && (timelineData?.securityType == .stock || timelineData?.securityType == .etf)
+        let chartW = isStockTL ? w * (1 - EFLayout.orderBookRatio) : w
+
+        // 4. 主图 + 副图高度分配
         let remaining = h - y
         let subCnt    = visibleSubCount()
-        let mainH     = remaining * (subCnt == 0 ? 0.72 : EFLayout.mainRatio)
-        let eachSubH  = subCnt > 0 ? remaining * EFLayout.subRatio : 0
+        let mainH     = remaining * EFLayout.mainRatio
+        let eachSubH  = subCnt > 0 ? (remaining - mainH) / CGFloat(subCnt) : 0
 
-        // 4. 个股分时：右侧盘口
-        let isStockTimeline = (currentPeriod == .timeline || currentPeriod == .fiveDay)
-            && (timelineData?.securityType == .stock || timelineData?.securityType == .etf)
-        let chartW = isStockTimeline
-            ? w * (1 - EFLayout.orderBookRatio)
-            : w
-
-        // 5. 主图
         mainImageView.frame  = CGRect(x: 0, y: y, width: chartW, height: mainH)
         crosshairLayer.frame = mainImageView.bounds
         y += mainH
 
-        // 6. 副图
+        // 5. 副图
         for (i, panel) in subPanels.enumerated() {
-            let isVisible = i < subCnt
-            panel.isHidden = !isVisible
-            if isVisible {
+            let visible = i < subCnt
+            panel.isHidden = !visible
+            if visible {
                 panel.frame = CGRect(x: 0, y: y, width: chartW, height: eachSubH)
                 y += eachSubH
             }
         }
 
-        // 7. 盘口
-        orderBookView.isHidden = !isStockTimeline
-        if isStockTimeline {
+        // 6. 盘口
+        orderBookView.isHidden = !isStockTL
+        if isStockTL {
             let obY = mainImageView.frame.minY
-            let obH = mainH + CGFloat(subCnt) * eachSubH
+            let obH = mainImageView.frame.height + CGFloat(subCnt) * eachSubH
             orderBookView.frame = CGRect(x: chartW, y: obY, width: w - chartW, height: obH)
-        }
-    }
-
-    // 返回当前应显示的副图数量
-    private func visibleSubCount() -> Int {
-        switch currentPeriod {
-        case .timeline, .fiveDay:
-            // 分时图：1个副图（MACD 或 成交量）
-            return 1
-        case .kLine:
-            guard let d = kLineData else { return 1 }
-            return Swift.min(config.subCount, d.subData.count)
         }
     }
 
@@ -190,18 +174,25 @@ public final class EFStockChartView: UIView {
         return false
     }
 
-    // 副图默认指标顺序
-    private func defaultIndicator(for index: Int) -> EFSubIndicator {
-        [.macd, .kdj, .rsi, .volume][Swift.min(index, 3)]
+    private func visibleSubCount() -> Int {
+        switch currentPeriod {
+        case .timeline, .fiveDay:
+            return 1   // 分时图固定 1 个副图（可切换 MACD/VOL）
+        case .kLine:
+            guard let d = kLineData else { return 1 }
+            return Swift.min(d.subData.count, 4)
+        }
     }
 
-    // ─────────────────────── 数据加载（公开 API）──────────────
+    private func defaultIndicator(for i: Int) -> EFSubIndicator {
+        [.macd, .kdj, .rsi, .volume][Swift.min(i, 3)]
+    }
 
-    /// 加载分时数据（个股或指数均可）
+    // ────────────────────── 数据加载（公开 API）────────────────────
+
     public func loadTimeline(_ data: EFTimelineData) {
         timelineData = data
         currentPeriod = data.period
-        // 切换数据源时始终隐藏十字线（解决 Segment 切换后残留问题）
         crosshairActive = false
         crosshairLayer.hide()
         periodBar.setSelected(data.period)
@@ -209,54 +200,47 @@ public final class EFStockChartView: UIView {
         setNeedsLayout()
     }
 
-    /// 加载 K 线数据
     public func loadKLine(_ data: EFKLineData) {
-        kLineData = data
+        kLineData    = data
         currentPeriod = .kLine(data.period)
-        // 切换数据源时始终隐藏十字线
         crosshairActive = false
         crosshairLayer.hide()
         periodBar.setSelected(currentPeriod)
 
-        // 同步副图面板指标与数据
+        // 初始可见范围：最右侧 N 根
+        let vis   = computeDefaultVisCount()
+        let total = data.candles.count
+        visibleRange = Swift.max(0, total - vis)..<total
+
+        // 同步副图面板指标名称
         for (i, panel) in subPanels.enumerated() {
             if i < data.subData.count {
-                panel.setIndicator(indicatorFrom(subData: data.subData[i]))
+                panel.setIndicator(indicatorType(of: data.subData[i]))
             }
         }
-
-        // 初始可见范围：最右侧 N 根
-        let defaultVis = computeDefaultVisibleCount()
-        let total      = data.candles.count
-        visibleRange   = Swift.max(0, total - defaultVis)..<total
 
         setNeedsLayout()
     }
 
-    /// 追加新分时点（实时推送用）
     public func appendTimelinePoints(_ pts: [EFTimePoint]) {
         guard let d = timelineData else { return }
-        let newPts = d.points + pts
         timelineData = EFTimelineData(
             securityType: d.securityType, stockCode: d.stockCode, stockName: d.stockName,
             prevClose: d.prevClose, upperLimit: d.upperLimit, lowerLimit: d.lowerLimit,
-            points: newPts, period: d.period, orderBook: d.orderBook
-        )
-        triggerFullRedraw()
+            points: d.points + pts, period: d.period, orderBook: d.orderBook)
+        triggerRender()
     }
 
-    /// 更新盘口数据（实时推送用）
     public func updateOrderBook(_ ob: EFOrderBook) {
         timelineData?.orderBook = ob
         orderBookView.update(ob)
     }
 
-    /// 更新分时成交明细
     public func updateTradeRecords(_ trades: [EFTradeRecord]) {
         orderBookView.updateTrades(trades)
     }
 
-    // ─────────────────────── 周期切换 ───────────────────────
+    // ────────────────────────── 周期切换 ────────────────────────────
 
     private func handlePeriodSelected(_ period: EFChartPeriod) {
         guard period != currentPeriod else { return }
@@ -265,43 +249,47 @@ public final class EFStockChartView: UIView {
         crosshairLayer.hide()
         setNeedsLayout()
         delegate?.chartView(self, didSelectPeriod: period)
-        // 通知外部加载对应周期数据
     }
 
-    // ─────────────────────── 渲染调度 ───────────────────────
+    // ────────────────────────── 渲染调度 ────────────────────────────
 
-    private func triggerFullRedraw() {
+    private func triggerRender() {
         let token = UUID(); renderToken = token
-        enqueueRender(token: token, fullRedraw: true)
+        scheduleRender(token: token, onlyPanel: nil)
     }
 
-    private func triggerSubRedraw(panel: EFSubPanel) {
+    private func renderSinglePanel(panel: EFSubPanel) {
         let token = UUID(); renderToken = token
-        enqueueRender(token: token, fullRedraw: false, targetPanel: panel)
+        scheduleRender(token: token, onlyPanel: panel)
     }
 
-    private func enqueueRender(token: UUID, fullRedraw: Bool, targetPanel: EFSubPanel? = nil) {
-        let mainRect  = mainImageView.bounds
-        // imageView.bounds 可能在 subpanel 未 layout 时仍为 zero
-        // 改用 panel.frame 减去 titleBar 高度得到正确的 imageView 区域
-        let subTitleH = EFLayout.subDivider
-        let subFrames = subPanels.filter { !$0.isHidden }.compactMap { panel -> (panel: EFSubPanel, iv: UIImageView, rect: CGRect)? in
+    private func scheduleRender(token: UUID, onlyPanel: EFSubPanel?) {
+        // 在主线程收集所有渲染所需数据（UI相关的只能主线程读）
+        let mainRect    = mainImageView.bounds
+        let screenScale = traitCollection.displayScale
+        let subTitleH   = EFLayout.subDivider
+
+        // 副图面板：(UIImageView引用, 渲染区域, 在数据数组中的索引)
+        typealias SubEntry = (iv: UIImageView, rect: CGRect, dataIdx: Int, panel: EFSubPanel)
+        let subEntries: [SubEntry] = subPanels.enumerated().compactMap { (i, panel) in
+            guard !panel.isHidden else { return nil }
+            if let op = onlyPanel, op !== panel { return nil }
             let ivH = panel.frame.height - subTitleH
             guard panel.frame.width > 0, ivH > 0 else { return nil }
-            let rect = CGRect(x: 0, y: 0, width: panel.frame.width - EFLayout.priceAxisW, height: ivH)
-            return (panel, panel.imageView, rect)
+            let rect = CGRect(x: 0, y: 0,
+                              width: panel.frame.width,
+                              height: ivH)
+            return (panel.imageView, rect, i, panel)
         }
 
-        let tlData   = timelineData
-        let klData   = kLineData
-        let period   = currentPeriod
-        let vis      = visibleRange
-        let cw       = candleWidth
+        let tlData  = timelineData
+        let klData  = kLineData
+        let period  = currentPeriod
+        let vis     = visibleRange
+        let cw      = candleWidth
         let cIdx: Int? = crosshairActive ? crosshairIndex : nil
-        let tlR      = tlRenderer
-        let klR      = klRenderer
-        // 在主线程提前捕获 scale（traitCollection 只能在主线程访问）
-        let screenScale = self.traitCollection.displayScale
+        let tlR     = self.tlR
+        let klR     = self.klR
 
         renderQ.async { [weak self] in
             guard let self = self, self.renderToken == token else { return }
@@ -309,7 +297,7 @@ public final class EFStockChartView: UIView {
             var mainImg: CGImage?
             var subImgs: [(UIImageView, CGImage)] = []
 
-            // ── 主图渲染
+            // ── 主图
             switch period {
             case .timeline, .fiveDay:
                 if let d = tlData, mainRect.width > 0 {
@@ -322,55 +310,33 @@ public final class EFStockChartView: UIView {
                 }
             }
 
-            // ── 副图渲染（subFrames 已包含正确的 imageView 尺寸）
-            for (i, entry) in subFrames.enumerated() {
-                let (panel, iv, rect) = entry
-                guard rect.width > 0, rect.height > 0 else { continue }
-                if let tp = targetPanel, tp !== panel { continue }  // 只刷指定副图
-
-                // 副图渲染的完整区域（含 titleBar 占位）
-                let renderRect = CGRect(x: 0, y: 0,
-                                        width: rect.width + EFLayout.priceAxisW,
-                                        height: rect.height)
-
+            // ── 副图
+            for entry in subEntries {
                 var img: CGImage?
                 switch period {
                 case .timeline, .fiveDay:
                     if let d = tlData {
-                        let closes = d.points.map(\.price)
-                        if closes.count > 26 {
-                            let r = EFIndicatorEngine.macd(closes: closes)
-                            if let ctx = makeOffscreenContext(size: renderRect.size, scale: screenScale) {
-                                ctx.setFillColor(EFColor.panel.cgColor)
-                                ctx.fill(CGRect(origin: .zero, size: renderRect.size))
-                                let subR = tlR.subContentRect(renderRect)
-                                // 分时图不需要 visibleRange（全量数据按时间顺序排列）
-                                tlR.drawMACDSub(ctx: ctx, result: r,
-                                                 visibleRange: nil,
-                                                 content: subR, crosshairIdx: cIdx)
-                                ctx.setStrokeColor(EFColor.border.cgColor); ctx.setLineWidth(0.5); ctx.stroke(subR)
-                                img = ctx.makeImage()
-                            }
-                        }
+                        // 分时副图：panel 的 indicator 决定画什么
+                        let ind = entry.panel.indicator
+                        img = tlR.renderSub(data: d, indicator: ind,
+                                            rect: entry.rect, crosshairIdx: cIdx)
                     }
                 case .kLine:
-                    if let d = klData, i < d.subData.count {
-                        // 传入完整 panel 区域（渲染器内部自己算 subContentRect）
-                        img = klR.renderSub(data: d, subIndex: i, rect: renderRect,
-                                            visibleRange: vis, candleWidth: cw, crosshairIdx: cIdx)
+                    if let d = klData, entry.dataIdx < d.subData.count {
+                        img = klR.renderSub(data: d, subIndex: entry.dataIdx,
+                                            rect: entry.rect, visibleRange: vis,
+                                            candleWidth: cw, crosshairIdx: cIdx)
                     }
                 }
-                if let img = img {
-                    subImgs.append((iv, img))
-                }
+                if let img = img { subImgs.append((entry.iv, img)) }
             }
 
             DispatchQueue.main.async {
                 guard self.renderToken == token else { return }
-                // 必须传入 scale，否则 CGImage(2x/3x) 会被 UIKit 按 1x 处理
-                // 导致图像被放大 2-3 倍，文字/图形全部溢出
                 if let img = mainImg {
-                    self.mainImageView.image = UIImage(cgImage: img, scale: screenScale, orientation: .up)
+                    self.mainImageView.image = UIImage(cgImage: img,
+                                                       scale: screenScale,
+                                                       orientation: .up)
                 }
                 for (iv, img) in subImgs {
                     iv.image = UIImage(cgImage: img, scale: screenScale, orientation: .up)
@@ -380,7 +346,7 @@ public final class EFStockChartView: UIView {
         }
     }
 
-    // ─────────────────────── MA 信息行 ──────────────────────
+    // ────────────────────────── MA 信息行 ────────────────────────────
 
     private func updateInfoBar() {
         guard let data = kLineData else { return }
@@ -388,34 +354,28 @@ public final class EFStockChartView: UIView {
         infoBar.update(maResults: data.maResults, index: ci)
     }
 
-    // ─────────────────────── 手势识别 ───────────────────────
+    // ────────────────────────── 手势 ────────────────────────────────
 
     private func setupGestures() {
-        let longPress = UILongPressGestureRecognizer(target: self, action: #selector(onLongPress(_:)))
-        longPress.minimumPressDuration = 0.28
-        longPress.delegate = self
-        addGestureRecognizer(longPress)
+        let lp = UILongPressGestureRecognizer(target: self, action: #selector(onLongPress(_:)))
+        lp.minimumPressDuration = 0.28; lp.delegate = self
+        addGestureRecognizer(lp)
 
         let pan = UIPanGestureRecognizer(target: self, action: #selector(onPan(_:)))
-        pan.delegate = self
-        addGestureRecognizer(pan)
+        pan.delegate = self; addGestureRecognizer(pan)
 
         let pinch = UIPinchGestureRecognizer(target: self, action: #selector(onPinch(_:)))
-        pinch.delegate = self
-        addGestureRecognizer(pinch)
+        pinch.delegate = self; addGestureRecognizer(pinch)
 
         let tap = UITapGestureRecognizer(target: self, action: #selector(onTap))
-        tap.require(toFail: longPress)
-        addGestureRecognizer(tap)
+        tap.require(toFail: lp); addGestureRecognizer(tap)
     }
 
     @objc private func onLongPress(_ gr: UILongPressGestureRecognizer) {
         switch gr.state {
         case .began, .changed:
-            let loc = gr.location(in: mainImageView)
-            activateCrosshair(at: loc)
+            activateCrosshair(at: gr.location(in: mainImageView))
         case .ended:
-            // 东方财富：长按结束后十字线保留 3 秒
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
                 self?.dismissCrosshair()
             }
@@ -424,62 +384,49 @@ public final class EFStockChartView: UIView {
     }
 
     @objc private func onPan(_ gr: UIPanGestureRecognizer) {
-        // 十字线激活时：拖动移动十字线
         if crosshairActive {
             activateCrosshair(at: gr.location(in: mainImageView))
             return
         }
-        // K线图：左右平移
         guard case .kLine = currentPeriod, let d = kLineData else { return }
         if gr.state == .began { panStartRange = visibleRange }
 
-        let dx     = gr.translation(in: self).x
-        let shift  = Int(-dx / Swift.max(1, candleWidth))
-        let cnt    = d.candles.count
-        let visLen = visibleRange.count
-        let ns     = (panStartRange.lowerBound + shift).clamped(lo: 0, hi: Swift.max(0, cnt - visLen))
-        let nr     = ns..<Swift.min(ns + visLen, cnt)
+        let dx    = gr.translation(in: self).x
+        let shift = Int(-dx / Swift.max(1, candleWidth))
+        let cnt   = d.candles.count
+        let len   = visibleRange.count
+        let ns    = (panStartRange.lowerBound + shift).clamped(lo: 0, hi: Swift.max(0, cnt - len))
+        let nr    = ns..<Swift.min(ns + len, cnt)
 
         guard nr != visibleRange else { return }
         visibleRange = nr
-        triggerFullRedraw()
+        triggerRender()
         delegate?.chartView(self, visibleRangeChanged: nr)
-
-        // 触达左边缘：请求加载更多历史数据
-        if ns <= 5 {
-            delegate?.chartView(self, visibleRangeChanged: nr)
-        }
+        if ns <= 5 { delegate?.chartView(self, visibleRangeChanged: nr) }
     }
 
     @objc private func onPinch(_ gr: UIPinchGestureRecognizer) {
         guard case .kLine = currentPeriod, let d = kLineData else { return }
         if gr.state == .began { pinchStartCW = candleWidth }
 
-        let nw    = (pinchStartCW * gr.scale).clamped(lo: EFLayout.candleMinW, hi: EFLayout.candleMaxW)
+        let nw = (pinchStartCW * gr.scale).clamped(lo: EFLayout.candleMinW, hi: EFLayout.candleMaxW)
         guard abs(nw - candleWidth) > 0.15 else { return }
         candleWidth = nw
 
-        // 以可见区间右端为锚点，重新计算左边界
-        let newVis = computeDefaultVisibleCount()
+        let newVis = computeDefaultVisCount()
         let total  = d.candles.count
         let start  = Swift.max(0, visibleRange.upperBound - newVis)
         visibleRange = start..<Swift.min(start + newVis, total)
-        triggerFullRedraw()
+        triggerRender()
     }
 
     @objc private func onTap() { dismissCrosshair() }
 
-    // ─────────────────────── 十字线 ─────────────────────────
-
     private func activateCrosshair(at loc: CGPoint) {
         crosshairActive = true
         crosshairIndex  = locationToIndex(loc)
-
-        // 十字线覆盖层（高频 setNeedsDisplay，不触发主图重渲）
         crosshairLayer.show(x: loc.x, y: loc.y, bounds: mainImageView.bounds)
-
-        // 主图 + 副图需要重渲（含 tooltip）
-        triggerFullRedraw()
+        triggerRender()
         delegate?.chartView(self, crosshairMoved: crosshairIndex, period: currentPeriod)
     }
 
@@ -487,11 +434,10 @@ public final class EFStockChartView: UIView {
         guard crosshairActive else { return }
         crosshairActive = false
         crosshairLayer.hide()
-        triggerFullRedraw()
+        triggerRender()
         delegate?.chartViewCrosshairHid(self)
     }
 
-    /// 将屏幕坐标转换为数据索引
     private func locationToIndex(_ loc: CGPoint) -> Int {
         let contentW = mainImageView.bounds.width - EFLayout.priceAxisW
         guard contentW > 0 else { return 0 }
@@ -499,28 +445,23 @@ public final class EFStockChartView: UIView {
 
         switch currentPeriod {
         case .timeline, .fiveDay:
-            let total = EFTimelineRenderer.totalSlots(for: currentPeriod)
-            let raw   = Int(ratio * CGFloat(total))
+            let total  = EFTimelineRenderer.totalSlots(for: currentPeriod)
             let maxIdx = Swift.max(0, (timelineData?.points.count ?? 1) - 1)
-            return raw.clamped(lo: 0, hi: maxIdx)
-
+            return Int(ratio * CGFloat(total)).clamped(lo: 0, hi: maxIdx)
         case .kLine:
-            let vis = visibleRange
-            guard vis.count > 1 else { return vis.lowerBound }
-            let i   = Int(ratio * CGFloat(vis.count - 1) + 0.5)
+            let vis    = visibleRange
             let maxIdx = Swift.max(0, (kLineData?.candles.count ?? 1) - 1)
+            let i      = Int(ratio * CGFloat(vis.count - 1) + 0.5)
             return (vis.lowerBound + i).clamped(lo: 0, hi: maxIdx)
         }
     }
 
-    // ─────────────────────── 工具 ───────────────────────────
-
-    private func computeDefaultVisibleCount() -> Int {
+    private func computeDefaultVisCount() -> Int {
         let w = Swift.max(mainImageView.bounds.width, bounds.width - EFLayout.priceAxisW)
         return Swift.max(20, Int(w / candleWidth))
     }
 
-    private func indicatorFrom(subData: EFSubData) -> EFSubIndicator {
+    private func indicatorType(of subData: EFSubData) -> EFSubIndicator {
         switch subData {
         case .macd:   return .macd
         case .kdj:    return .kdj
@@ -530,11 +471,10 @@ public final class EFStockChartView: UIView {
     }
 }
 
-// MARK: ── UIGestureRecognizerDelegate ───────────────────────
+// MARK: - UIGestureRecognizerDelegate
 
 extension EFStockChartView: UIGestureRecognizerDelegate {
-    public func gestureRecognizer(
-        _ a: UIGestureRecognizer,
-        shouldRecognizeSimultaneouslyWith b: UIGestureRecognizer
-    ) -> Bool { true }
+    public func gestureRecognizer(_ a: UIGestureRecognizer,
+                                   shouldRecognizeSimultaneouslyWith b: UIGestureRecognizer) -> Bool { true }
 }
+
