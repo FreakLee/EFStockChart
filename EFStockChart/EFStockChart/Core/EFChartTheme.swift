@@ -51,6 +51,13 @@ public struct EFColor {
     static let dLine = UIColor(r: 255, g: 255, b: 255)  // 白 D
     static let jLine = UIColor(r: 204, g: 102, b: 255)  // 紫 J
 
+    // ── RSI 线（RSI6=白, RSI12=黄, RSI24=紫）
+    static let rsiColors: [UIColor] = [
+        UIColor(r: 255, g: 255, b: 255),   // RSI6  白
+        UIColor(r: 255, g: 200, b: 0),     // RSI12 黄
+        UIColor(r: 204, g: 102, b: 255),   // RSI24 紫
+    ]
+
     // ── 成交量 MA
     static let volMa1 = UIColor(r: 255, g: 200, b: 0)    // 黄
     static let volMa2 = UIColor(r: 204, g: 102, b: 255)  // 粉/紫

@@ -293,13 +293,15 @@ final class EFKLineRenderer {
             ctx.drawString(legend, at: CGPoint(x: rect.minX + 4, y: rect.minY + 10),
                            font: EFLayout.axisFont, color: EFColor.textSecondary, align: .left)
 
-        case .rsi(let rd):
-            drawRSI(ctx: ctx, rd: rd, vis: safeVis, cr: cr, ci: ci)
-            let gi  = safeVis.upperBound - 1
-            let val = gi < rd.values.count ? rd.values[gi] : nil
-            drawSubLegend(ctx: ctx, rect: rect, text: "RSI(\(rd.period))", vals: [
-                ("RSI", val, EFColor.ma5)
-            ])
+        case .rsi(let rds):
+            drawRSI(ctx: ctx, rds: rds, vis: safeVis, cr: cr, ci: ci)
+            let gi   = safeVis.upperBound - 1
+            let vals = rds.enumerated().map { i, rd -> (String, Double?, UIColor) in
+                let color = EFColor.rsiColors[Swift.min(i, EFColor.rsiColors.count - 1)]
+                let val   = gi < rd.values.count ? rd.values[gi] : nil
+                return ("RSI\(rd.period)", val, color)
+            }
+            drawSubLegend(ctx: ctx, rect: rect, text: "RSI", vals: vals)
         }
     }
 
@@ -408,8 +410,9 @@ final class EFKLineRenderer {
     // MARK: - RSI
     // ─────────────────────────────────────────────────────────────
 
-    private func drawRSI(ctx: CGContext, rd: EFRSIResult,
+    private func drawRSI(ctx: CGContext, rds: [EFRSIResult],
                           vis: Range<Int>, cr: CGRect, ci: Int?) {
+        guard !rds.isEmpty else { return }
         let pRange = 0.0...100.0
         let slotW  = cr.width / CGFloat(vis.count)
 
@@ -421,12 +424,16 @@ final class EFKLineRenderer {
                                  to:   CGPoint(x: cr.maxX, y: y),
                                  color: EFColor.grid, lineWidth: 0.3, dash: [2, 2])
         }
-        let ps: [CGPoint?] = vis.enumerated().map { li, gi in
-            guard gi < rd.values.count else { return nil }
-            return CGPoint(x: cr.minX + (CGFloat(li) + 0.5) * slotW,
-                           y: tlR.yFor(price: rd.values[gi], range: pRange, rect: cr))
+
+        for (i, rd) in rds.enumerated() {
+            let color = EFColor.rsiColors[Swift.min(i, EFColor.rsiColors.count - 1)]
+            let ps: [CGPoint?] = vis.enumerated().map { li, gi in
+                guard gi < rd.values.count else { return nil }
+                return CGPoint(x: cr.minX + (CGFloat(li) + 0.5) * slotW,
+                               y: tlR.yFor(price: rd.values[gi], range: pRange, rect: cr))
+            }
+            ctx.strokePolyline(points: ps, color: color, lineWidth: 1.0)
         }
-        ctx.strokePolyline(points: ps, color: EFColor.ma5, lineWidth: 1.0)
 
         if let idx = ci, vis.contains(idx) {
             let x = cr.minX + (CGFloat(idx - vis.lowerBound) + 0.5) * slotW

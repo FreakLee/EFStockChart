@@ -156,12 +156,14 @@ public enum EFMockData {
         let macdData  = EFIndicatorEngine.macd(closes: closes)
         let kdjData   = EFIndicatorEngine.kdj(highs: highs, lows: lows, closes: closes)
         let rsi6      = EFIndicatorEngine.rsi(closes: closes, period: 6)
+        let rsi12     = EFIndicatorEngine.rsi(closes: closes, period: 12)
+        let rsi24     = EFIndicatorEngine.rsi(closes: closes, period: 24)
         let volData   = EFIndicatorEngine.volumeResult(volumes: volumes, candles: candles)
 
         let subData: [EFSubData] = [
             .macd(macdData),
             .kdj(kdjData),
-            .rsi(rsi6),
+            .rsi([rsi6, rsi12, rsi24]),
             .volume(volData),
         ]
 

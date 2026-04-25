@@ -60,6 +60,12 @@ public final class EFStockChartView: UIView {
     private let renderQ   = DispatchQueue(label: "ef.render", qos: .userInteractive)
     private var renderToken = UUID()
 
+    // ── 动量滚动
+    private lazy var animator    = UIDynamicAnimator(referenceView: self)
+    private lazy var dynamicItem = EFDynamicItem()
+    private weak var decelerationBehavior: UIDynamicItemBehavior?
+    private var decelerationStartX: CGFloat = 0
+
     // ──────────────────────────── 子视图 ────────────────────────────
 
     /// 周期切换栏（分时/五日/日K/周K/月K/更多）
@@ -253,17 +259,17 @@ public final class EFStockChartView: UIView {
 
     // ────────────────────────── 渲染调度 ────────────────────────────
 
-    private func triggerRender() {
+    private func triggerRender(skipSub: Bool = false) {
         let token = UUID(); renderToken = token
-        scheduleRender(token: token, onlyPanel: nil)
+        scheduleRender(token: token, onlyPanel: nil, skipSub: skipSub)
     }
 
     private func renderSinglePanel(panel: EFSubPanel) {
         let token = UUID(); renderToken = token
-        scheduleRender(token: token, onlyPanel: panel)
+        scheduleRender(token: token, onlyPanel: panel, skipSub: false)
     }
 
-    private func scheduleRender(token: UUID, onlyPanel: EFSubPanel?) {
+    private func scheduleRender(token: UUID, onlyPanel: EFSubPanel?, skipSub: Bool) {
         // 在主线程收集所有渲染所需数据（UI相关的只能主线程读）
         let mainRect    = mainImageView.bounds
         let screenScale = traitCollection.displayScale
@@ -271,7 +277,7 @@ public final class EFStockChartView: UIView {
 
         // 副图面板：(UIImageView引用, 渲染区域, 在数据数组中的索引)
         typealias SubEntry = (iv: UIImageView, rect: CGRect, dataIdx: Int, panel: EFSubPanel)
-        let subEntries: [SubEntry] = subPanels.enumerated().compactMap { (i, panel) in
+        let subEntries: [SubEntry] = skipSub ? [] : subPanels.enumerated().compactMap { (i, panel) in
             guard !panel.isHidden else { return nil }
             if let op = onlyPanel, op !== panel { return nil }
             let ivH = panel.frame.height - subTitleH
@@ -389,20 +395,63 @@ public final class EFStockChartView: UIView {
             return
         }
         guard case .kLine = currentPeriod, let d = kLineData else { return }
-        if gr.state == .began { panStartRange = visibleRange }
 
-        let dx    = gr.translation(in: self).x
-        let shift = Int(-dx / Swift.max(1, candleWidth))
-        let cnt   = d.candles.count
-        let len   = visibleRange.count
-        let ns    = (panStartRange.lowerBound + shift).clamped(lo: 0, hi: Swift.max(0, cnt - len))
-        let nr    = ns..<Swift.min(ns + len, cnt)
+        switch gr.state {
+        case .began:
+            animator.removeAllBehaviors()
+            panStartRange = visibleRange
 
-        guard nr != visibleRange else { return }
-        visibleRange = nr
-        triggerRender()
-        delegate?.chartView(self, visibleRangeChanged: nr)
-        if ns <= 5 { delegate?.chartView(self, visibleRangeChanged: nr) }
+        case .changed:
+            let dx    = gr.translation(in: self).x
+            let shift = Int(-dx / Swift.max(1, candleWidth))
+            let cnt   = d.candles.count
+            let len   = visibleRange.count
+            let ns    = (panStartRange.lowerBound + shift).clamped(lo: 0, hi: Swift.max(0, cnt - len))
+            let nr    = ns..<Swift.min(ns + len, cnt)
+            guard nr != visibleRange else { return }
+            visibleRange = nr
+            // 拖动时跳过副图渲染，仅刷新主图，提升流畅度
+            triggerRender(skipSub: true)
+            delegate?.chartView(self, visibleRangeChanged: nr)
+            if ns <= 5 { delegate?.chartView(self, visibleRangeChanged: nr) }
+
+        case .ended, .cancelled:
+            // 手势结束后补一帧完整渲染（含副图）
+            triggerRender()
+
+            // 添加惯性动量滚动
+            let velocity = gr.velocity(in: self)
+            guard abs(velocity.x) > 80 else { return }
+            decelerationStartX      = 0
+            dynamicItem.center      = .zero
+            let behavior            = UIDynamicItemBehavior(items: [dynamicItem])
+            behavior.addLinearVelocity(velocity, for: dynamicItem)
+            behavior.resistance     = 3.0
+            behavior.action = { [weak self] in
+                guard let self = self, let d = self.kLineData else { return }
+                let itemX    = self.dynamicItem.center.x
+                let dist     = itemX - self.decelerationStartX
+                let slotW    = Swift.max(1, self.candleWidth)
+                guard abs(dist) >= slotW else { return }
+                let shift    = Int(-dist / slotW)
+                let cnt      = d.candles.count
+                let len      = self.visibleRange.count
+                let ns       = (self.visibleRange.lowerBound + shift).clamped(lo: 0, hi: Swift.max(0, cnt - len))
+                let nr       = ns..<Swift.min(ns + len, cnt)
+                guard nr != self.visibleRange else { return }
+                self.visibleRange          = nr
+                self.decelerationStartX    = itemX
+                let atEdge = (ns == 0 || ns >= cnt - len)
+                self.triggerRender(skipSub: !atEdge)
+                self.delegate?.chartView(self, visibleRangeChanged: nr)
+                if atEdge { self.animator.removeAllBehaviors() }
+                if ns <= 5 { self.delegate?.chartView(self, visibleRangeChanged: nr) }
+            }
+            animator.addBehavior(behavior)
+            decelerationBehavior = behavior
+
+        default: break
+        }
     }
 
     @objc private func onPinch(_ gr: UIPinchGestureRecognizer) {
@@ -476,5 +525,13 @@ public final class EFStockChartView: UIView {
 extension EFStockChartView: UIGestureRecognizerDelegate {
     public func gestureRecognizer(_ a: UIGestureRecognizer,
                                    shouldRecognizeSimultaneouslyWith b: UIGestureRecognizer) -> Bool { true }
+}
+
+// MARK: - EFDynamicItem（UIDynamicAnimator 动量滚动辅助）
+
+private final class EFDynamicItem: NSObject, UIDynamicItem {
+    var center:    CGPoint              = .zero
+    var bounds:    CGRect               = CGRect(x: 0, y: 0, width: 1, height: 1)
+    var transform: CGAffineTransform    = .identity
 }
 

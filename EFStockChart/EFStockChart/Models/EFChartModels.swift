@@ -154,7 +154,7 @@ public enum EFSubData {
     case volume(EFVolumeResult)
     case macd(EFMACDResult)
     case kdj(EFKDJResult)
-    case rsi(EFRSIResult)
+    case rsi([EFRSIResult])   // 支持多条 RSI 线，如 [RSI6, RSI12, RSI24]
 }
 
 // MARK: ── 完整数据包 ────────────────────────────────────────
