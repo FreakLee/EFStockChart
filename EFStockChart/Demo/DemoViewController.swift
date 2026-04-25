@@ -24,6 +24,9 @@ public final class EFDemoViewController: UIViewController {
     // ── 切换按钮（演示）
     private let segControl = UISegmentedControl(items: ["个股分时", "指数分时", "日K", "分钟K"])
 
+    // ── 性能浮层
+    private let perfHUD = EFPerformanceHUD()
+
     private var currentDemo = 0
 
     public override func viewDidLoad() {
@@ -31,6 +34,17 @@ public final class EFDemoViewController: UIViewController {
         view.backgroundColor = EFColor.background
         setupLayout()
         loadDemo(0)
+        setupPerfHUD()
+    }
+
+    private func setupPerfHUD() {
+        perfHUD.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(perfHUD)
+        NSLayoutConstraint.activate([
+            perfHUD.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 4),
+            perfHUD.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -8),
+        ])
+        perfHUD.start()
     }
 
     private func setupLayout() {
@@ -223,6 +237,80 @@ final class EFQuoteSummaryView: UIView {
         s.axis = .vertical; s.spacing = 1; s.alignment = .leading
         return s
     }
+}
+
+// MARK: ── EFPerformanceHUD ──────────────────────────────────────
+// 直接加在 view 层级，用 CADisplayLink 测 FPS + mach API 测 CPU，无需 UIWindow
+
+final class EFPerformanceHUD: UIView {
+
+    private let label = UILabel()
+    private var displayLink: CADisplayLink?
+    private var lastTimestamp: CFTimeInterval = 0
+    private var frameCount  = 0
+
+    override init(frame: CGRect) { super.init(frame: frame); build() }
+    required init?(coder: NSCoder) { super.init(coder: coder); build() }
+
+    private func build() {
+        backgroundColor          = UIColor.black.withAlphaComponent(0.65)
+        layer.cornerRadius       = 5
+        label.font               = .monospacedDigitSystemFont(ofSize: 10, weight: .medium)
+        label.textColor          = .white
+        label.textAlignment      = .center
+        label.numberOfLines      = 0
+        label.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(label)
+        NSLayoutConstraint.activate([
+            label.topAnchor.constraint(equalTo: topAnchor, constant: 3),
+            label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -3),
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
+            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
+            widthAnchor.constraint(greaterThanOrEqualToConstant: 80),
+        ])
+    }
+
+    func start() {
+        displayLink = CADisplayLink(target: self, selector: #selector(tick(_:)))
+        displayLink?.add(to: .main, forMode: .common)
+    }
+
+    @objc private func tick(_ link: CADisplayLink) {
+        if lastTimestamp == 0 { lastTimestamp = link.timestamp; return }
+        frameCount += 1
+        let elapsed = link.timestamp - lastTimestamp
+        guard elapsed >= 1.0 else { return }
+        let fps = Int(round(Double(frameCount) / elapsed))
+        let cpu = cpuUsage()
+        label.text = String(format: "FPS %d\nCPU %.0f%%", fps, cpu)
+        lastTimestamp = link.timestamp
+        frameCount    = 0
+    }
+
+    private func cpuUsage() -> Double {
+        var threads: thread_act_array_t?
+        var count   = mach_msg_type_number_t(0)
+        guard task_threads(mach_task_self_, &threads, &count) == KERN_SUCCESS,
+              let list = threads else { return 0 }
+        var total = 0.0
+        for i in 0..<Int(count) {
+            var info  = thread_basic_info()
+            var infoC = mach_msg_type_number_t(THREAD_INFO_MAX)
+            let kr = withUnsafeMutablePointer(to: &info) {
+                $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
+                    thread_info(list[i], thread_flavor_t(THREAD_BASIC_INFO), $0, &infoC)
+                }
+            }
+            if kr == KERN_SUCCESS, info.flags & TH_FLAGS_IDLE == 0 {
+                total += Double(info.cpu_usage) / Double(TH_USAGE_SCALE) * 100
+            }
+        }
+        vm_deallocate(mach_task_self_, vm_address_t(UInt(bitPattern: list)),
+                      vm_size_t(Int(count) * MemoryLayout<thread_t>.stride))
+        return total
+    }
+
+    deinit { displayLink?.invalidate() }
 }
 
 // MARK: ── AppDelegate 最简接入 ──────────────────────────────────

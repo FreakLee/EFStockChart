@@ -66,6 +66,9 @@ public final class EFStockChartView: UIView {
     private weak var decelerationBehavior: UIDynamicItemBehavior?
     private var decelerationStartX: CGFloat = 0
 
+    // ── 防抖：skipSub 渲染后延迟触发一次全量渲染（含副图）
+    private var subSyncTimer: Timer?
+
     // ──────────────────────────── 子视图 ────────────────────────────
 
     /// 周期切换栏（分时/五日/日K/周K/月K/更多）
@@ -262,6 +265,15 @@ public final class EFStockChartView: UIView {
     private func triggerRender(skipSub: Bool = false) {
         let token = UUID(); renderToken = token
         scheduleRender(token: token, onlyPanel: nil, skipSub: skipSub)
+        if skipSub { scheduleSubSync() }
+    }
+
+    /// 惯性滚动期间每帧只画主图；最后一帧 150ms 后无新帧时补一次全量渲染（副图同步）
+    private func scheduleSubSync() {
+        subSyncTimer?.invalidate()
+        subSyncTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: false) { [weak self] _ in
+            self?.triggerRender()   // skipSub=false，全量
+        }
     }
 
     private func renderSinglePanel(panel: EFSubPanel) {
@@ -416,12 +428,10 @@ public final class EFStockChartView: UIView {
             if ns <= 5 { delegate?.chartView(self, visibleRangeChanged: nr) }
 
         case .ended, .cancelled:
-            // 手势结束后补一帧完整渲染（含副图）
-            triggerRender()
-
             // 添加惯性动量滚动
             let velocity = gr.velocity(in: self)
-            guard abs(velocity.x) > 80 else { return }
+            // 速度不足时直接全量渲染一帧（含副图），然后退出
+            guard abs(velocity.x) > 80 else { triggerRender(); return }
             decelerationStartX      = 0
             dynamicItem.center      = .zero
             let behavior            = UIDynamicItemBehavior(items: [dynamicItem])
@@ -442,9 +452,15 @@ public final class EFStockChartView: UIView {
                 self.visibleRange          = nr
                 self.decelerationStartX    = itemX
                 let atEdge = (ns == 0 || ns >= cnt - len)
-                self.triggerRender(skipSub: !atEdge)
+                if atEdge {
+                    // 到达边界：取消防抖 timer，立即全量渲染后停止动量
+                    self.subSyncTimer?.invalidate()
+                    self.triggerRender()
+                    self.animator.removeAllBehaviors()
+                } else {
+                    self.triggerRender(skipSub: true)   // scheduleSubSync 已在内部调用
+                }
                 self.delegate?.chartView(self, visibleRangeChanged: nr)
-                if atEdge { self.animator.removeAllBehaviors() }
                 if ns <= 5 { self.delegate?.chartView(self, visibleRangeChanged: nr) }
             }
             animator.addBehavior(behavior)
