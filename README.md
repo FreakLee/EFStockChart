@@ -1,6 +1,7 @@
 # EFStockChart
 
-东方财富风格股票图表组件 — iOS 15+，Swift 5.7，零第三方依赖
+东方财富风格股票图表组件 — iOS 15+，Swift 5.7，零第三方依赖。效果图如下：
+![K线](https://github.com/FreakLee/EFStockChart/blob/main/Snapshot/kLine.png)
 
 ---
 
