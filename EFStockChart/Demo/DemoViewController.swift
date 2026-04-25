@@ -22,10 +22,14 @@ public final class EFDemoViewController: UIViewController {
     public let chartView  = EFStockChartView()
 
     // ── 切换按钮（演示）
-    private let segControl = UISegmentedControl(items: ["个股分时", "指数分时", "日K", "分钟K"])
+    private let segControl = UISegmentedControl(items: ["个股分时", "指数分时", "日K", "分钟K", "实时分时"])
 
     // ── 性能浮层
     private let perfHUD = EFPerformanceHUD()
+
+    // ── 实时分时模拟
+    private var realtimeTimer: Timer?
+    private var simulator: EFRealtimeSimulator?
 
     private var currentDemo = 0
 
@@ -84,32 +88,60 @@ public final class EFDemoViewController: UIViewController {
     }
 
     private func loadDemo(_ index: Int) {
+        stopRealtimeSimulation()          // 切换前先停止实时推送
         currentDemo = index
         switch index {
         case 0:
-            // 个股分时（带右侧盘口）
             quoteView.update(EFMockData.stockQuote())
             chartView.loadTimeline(EFMockData.stockTimeline())
 
         case 1:
-            // 指数分时（全宽，内嵌涨跌家数柱）
             quoteView.update(EFMockData.indexQuote())
             chartView.loadTimeline(EFMockData.indexTimeline())
 
         case 2:
-            // 日 K 线
             quoteView.update(EFMockData.stockQuote())
-            let kData = EFMockData.stockKLine(period: .daily)
-            chartView.loadKLine(kData)
+            chartView.loadKLine(EFMockData.stockKLine(period: .daily))
 
         case 3:
-            // 5分钟 K 线
             quoteView.update(EFMockData.stockQuote())
-            let kData = EFMockData.stockKLine(period: .min5)
-            chartView.loadKLine(kData)
+            chartView.loadKLine(EFMockData.stockKLine(period: .min5))
+
+        case 4:
+            startRealtimeSimulation()
 
         default: break
         }
+    }
+
+    // MARK: ── 实时分时
+
+    private func startRealtimeSimulation() {
+        let prevClose = 1465.02
+        let sim = EFRealtimeSimulator(prevClose: prevClose)
+        simulator = sim
+
+        // 以前 30 分钟（09:30-10:00）作为历史快照加载
+        let data = sim.initialData(count: 30)
+        quoteView.update(EFMockData.stockQuote())
+        chartView.loadTimeline(data)
+
+        // 每秒推一个新分时点（每个点代表 1 分钟，演示加速）
+        realtimeTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            guard let self, let sim = self.simulator else { return }
+            guard let pt = sim.nextPoint() else {
+                self.stopRealtimeSimulation()   // 240 分钟到收盘自动停止
+                return
+            }
+            self.chartView.appendTimelinePoints([pt])
+            self.chartView.updateOrderBook(sim.makeOrderBook())
+        }
+    }
+
+    private func stopRealtimeSimulation() {
+        realtimeTimer?.invalidate()
+        realtimeTimer = nil
+        simulator = nil
     }
 }
 
@@ -248,6 +280,7 @@ final class EFPerformanceHUD: UIView {
     private var displayLink: CADisplayLink?
     private var lastTimestamp: CFTimeInterval = 0
     private var frameCount  = 0
+    private var smoothedCPU: Double = 0   // EMA 平滑，消除瞬间抖动
 
     override init(frame: CGRect) { super.init(frame: frame); build() }
     required init?(coder: NSCoder) { super.init(coder: coder); build() }
@@ -280,9 +313,11 @@ final class EFPerformanceHUD: UIView {
         frameCount += 1
         let elapsed = link.timestamp - lastTimestamp
         guard elapsed >= 1.0 else { return }
-        let fps = Int(round(Double(frameCount) / elapsed))
-        let cpu = cpuUsage()
-        label.text = String(format: "FPS %d\nCPU %.0f%%", fps, cpu)
+        let fps    = Int(round(Double(frameCount) / elapsed))
+        let rawCPU = cpuUsage()
+        // EMA α=0.35：新值权重 35%，旧值权重 65%，平滑抖动但仍能反映真实趋势
+        smoothedCPU = smoothedCPU < 1 ? rawCPU : smoothedCPU * 0.65 + rawCPU * 0.35
+        label.text  = String(format: "FPS %d\nCPU %.0f%%", fps, smoothedCPU)
         lastTimestamp = link.timestamp
         frameCount    = 0
     }

@@ -232,11 +232,8 @@ public final class EFStockChartView: UIView {
     }
 
     public func appendTimelinePoints(_ pts: [EFTimePoint]) {
-        guard let d = timelineData else { return }
-        timelineData = EFTimelineData(
-            securityType: d.securityType, stockCode: d.stockCode, stockName: d.stockName,
-            prevClose: d.prevClose, upperLimit: d.upperLimit, lowerLimit: d.lowerLimit,
-            points: d.points + pts, period: d.period, orderBook: d.orderBook)
+        guard pts.isEmpty == false else { return }
+        timelineData?.points.append(contentsOf: pts)   // COW in-place，O(1) amortized
         triggerRender()
     }
 

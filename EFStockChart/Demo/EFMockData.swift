@@ -239,3 +239,86 @@ public enum EFMockData {
         return candles
     }
 }
+
+// MARK: ── 实时分时模拟器 ────────────────────────────────────────
+// 调用 initialData() 获取历史快照，再每秒调用 nextPoint() 推新数据
+
+public final class EFRealtimeSimulator {
+
+    // A 股全天 240 分钟（上午 09:30-11:30 / 下午 13:00-15:00）
+    public static let totalMinutes = 240
+
+    private let prevClose: Double
+    private var price:     Double
+    private var cumVol:    Double = 0
+    private var cumAmt:    Double = 0
+    private var nextIdx:   Int   = 0      // 下一个要生成的分钟序号 (0-239)
+    private let dayComps:  DateComponents
+
+    public var isFinished: Bool { nextIdx >= Self.totalMinutes }
+
+    public init(prevClose: Double) {
+        self.prevClose = prevClose
+        self.price     = prevClose
+        self.dayComps  = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+    }
+
+    /// 生成前 `count` 分钟的历史数据并返回完整 EFTimelineData
+    public func initialData(count: Int, securityType: EFSecurityType = .stock,
+                            code: String = "600519", name: String = "贵州茅台") -> EFTimelineData {
+        let pts = (0..<Swift.min(count, Self.totalMinutes)).map { _ in generateNext() }
+        let ob  = makeOrderBook()
+        return EFTimelineData(
+            securityType: securityType, stockCode: code, stockName: name,
+            prevClose: prevClose,
+            upperLimit: prevClose * 1.1, lowerLimit: prevClose * 0.9,
+            points: pts, period: .timeline, orderBook: ob)
+    }
+
+    /// 生成下一个实时分时点（已完成则返回 nil）
+    public func nextPoint() -> EFTimePoint? {
+        guard !isFinished else { return nil }
+        return generateNext()
+    }
+
+    /// 生成实时盘口（随价格随机波动）
+    public func makeOrderBook() -> EFOrderBook {
+        let spread = price * 0.0002
+        return EFOrderBook(
+            asks: (1...5).map { EFOrderLevel(price + spread * Double($0),   Int.random(in: 1...20)) },
+            bids: (1...5).map { EFOrderLevel(price - spread * Double($0),   Int.random(in: 1...20)) }
+        )
+    }
+
+    // MARK: - Private
+
+    private func generateNext() -> EFTimePoint {
+        // 小幅随机游走，保持在涨跌停范围内
+        price = Swift.max(prevClose * 0.9,
+                          Swift.min(prevClose * 1.1,
+                                    price * (1 + Double.random(in: -0.007...0.007))))
+        let vol = Double.random(in: 100...600) * 100
+        let amt = vol * price
+        cumVol += vol; cumAmt += amt
+        let pt = EFTimePoint(
+            time:          timeForIdx(nextIdx),
+            price:         price,
+            avgPrice:      cumAmt / cumVol,
+            volume:        vol,
+            amount:        amt,
+            changePercent: (price - prevClose) / prevClose * 100
+        )
+        nextIdx += 1
+        return pt
+    }
+
+    private func timeForIdx(_ idx: Int) -> Date {
+        var c = dayComps
+        if idx < 120 {                    // 09:30 - 11:29
+            c.hour = 9;  c.minute = 30 + idx
+        } else {                          // 13:00 - 14:59
+            c.hour = 13; c.minute = idx - 120
+        }
+        return Calendar.current.date(from: c) ?? Date()
+    }
+}

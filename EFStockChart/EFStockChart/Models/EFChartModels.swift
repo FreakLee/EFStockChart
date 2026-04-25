@@ -167,7 +167,7 @@ public struct EFTimelineData {
     public let prevClose:    Double          // 昨收（分时图以此为对称轴）
     public let upperLimit:   Double          // 涨停价
     public let lowerLimit:   Double          // 跌停价
-    public let points:       [EFTimePoint]
+    public var points:       [EFTimePoint]
     public let period:       EFChartPeriod   // .timeline or .fiveDay
 
     // 个股专用：五档盘口
