@@ -310,8 +310,10 @@ final class EFTimelineRenderer {
         let total  = EFTimelineRenderer.totalSlots(for: data.period)
         let cr     = subContentRect(rect)   // 图表区域（顶部留图例空间）
 
+        //把 visRange: 0..<closes.count（比如30）传给 drawMACDContent，导致 slotW = width/30，MACD 柱被拉伸铺满全宽。而主图用 slotW = width/240，30个点只画在最左侧12%的位置——两者完全错位。
+        //closes.count->toal
         drawMACDContent(ctx: ctx, macd: macd,
-                        visRange: 0..<closes.count,
+                        visRange: 0..<total,
                         total: total, cr: cr, crosshairIdx: crosshairIdx)
         drawSubBorder(ctx: ctx, rect: rect)
 
